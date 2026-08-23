@@ -12,7 +12,7 @@ import com.ourcx.kuiklystock.domain.StockDetailState
 import com.ourcx.kuiklystock.domain.StockHomeState
 
 class StockHomeController(
-    stockRepository: StockRepository = InMemoryStockRepository(),
+    private val stockRepository: StockRepository = InMemoryStockRepository(),
     chatRepository: ChatRepository = InMemoryChatRepository(),
     private val onStateChanged: (StockHomeState) -> Unit = {},
 ) {
@@ -20,7 +20,7 @@ class StockHomeController(
         private set
 
     val marketController = MarketController(stockRepository) { marketState ->
-        updateState(state.copy(market = marketState))
+        updateMarketState(marketState)
     }
 
     val chatController = ChatController(
@@ -40,7 +40,7 @@ class StockHomeController(
             )
         },
         onStateChanged = { chatState ->
-            updateState(state.copy(chat = chatState))
+            updateChatState(chatState)
         },
     )
 
@@ -72,6 +72,36 @@ class StockHomeController(
         return selectedDetail
     }
 
+    /**
+     * Observable contract:
+     * - Ignores blank symbols and missing quotes without changing tab, destination, detail, or chat state.
+     * - For a resolved quote, navigates to AI home, clears detail, seeds a stock-specific analysis draft, then sends it.
+     * - Preserves the latest aggregated home state while chat callbacks mutate only the chat slice.
+     */
+    fun askAiAboutStock(symbol: String) {
+        val normalizedSymbol = symbol.trim()
+        if (normalizedSymbol.isEmpty()) return
+
+        val quote = runCatching { stockRepository.getQuote(normalizedSymbol) }
+            .getOrNull() ?: return
+
+        updateState(
+            state.copy(
+                selectedTab = AppTab.AI,
+                destination = AppDestination.Home,
+                detail = null,
+            ),
+        )
+
+        chatController.updateDraft(
+            buildAskAiQuestion(
+                symbol = quote.symbol,
+                name = quote.name,
+            ),
+        )
+        chatController.send()
+    }
+
     fun backFromDetail() {
         val detail = state.destination as? AppDestination.Detail ?: return
         updateState(
@@ -87,4 +117,15 @@ class StockHomeController(
         state = newState
         onStateChanged(newState)
     }
+
+    private fun updateMarketState(marketState: com.ourcx.kuiklystock.domain.MarketState) {
+        updateState(state.copy(market = marketState))
+    }
+
+    private fun updateChatState(chatState: com.ourcx.kuiklystock.domain.ChatState) {
+        updateState(state.copy(chat = chatState))
+    }
 }
+
+private fun buildAskAiQuestion(symbol: String, name: String): String =
+    "请分析股票$name（$symbol）的当前价格表现、短中期趋势、主要风险，以及接下来需要重点关注的信号。"

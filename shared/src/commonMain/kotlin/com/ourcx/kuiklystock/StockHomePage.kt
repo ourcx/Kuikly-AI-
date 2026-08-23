@@ -3,9 +3,13 @@ package com.ourcx.kuiklystock
 import com.ourcx.kuiklystock.base.BasePager
 import com.ourcx.kuiklystock.base.bridgeModule
 import com.ourcx.kuiklystock.data.InMemoryStockRepository
+import com.ourcx.kuiklystock.data.InMemoryChatRepository
+import com.ourcx.kuiklystock.data.ResilientChatRepository
 import com.ourcx.kuiklystock.data.WorkBuddyChatRepository
 import com.ourcx.kuiklystock.domain.AppDestination
 import com.ourcx.kuiklystock.domain.AppTab
+import com.ourcx.kuiklystock.domain.MarketFilter
+import com.ourcx.kuiklystock.domain.MarketSort
 import com.ourcx.kuiklystock.domain.StockHomeState
 import com.ourcx.kuiklystock.presentation.MarketDemoState
 import com.ourcx.kuiklystock.presentation.StockHomeController
@@ -29,9 +33,12 @@ internal class StockHomePage : BasePager() {
         val bridgeModule = bridgeModule
         StockHomeController(
             stockRepository = InMemoryStockRepository(),
-            chatRepository = WorkBuddyChatRepository(
-                isConfigured = bridgeModule.isWorkBuddyConfigured(),
-                requestInvoker = bridgeModule::requestWorkBuddy,
+            chatRepository = ResilientChatRepository(
+                remoteRepository = WorkBuddyChatRepository(
+                    isConfigured = bridgeModule.isWorkBuddyConfigured(),
+                    requestInvoker = bridgeModule::requestWorkBuddy,
+                ),
+                localRepository = InMemoryChatRepository(),
             ),
             onStateChanged = { state -> viewState = state },
         )
@@ -66,9 +73,17 @@ internal class StockHomePage : BasePager() {
                     onRetryMarket = context.controller.marketController::retry,
                     onSelectMarketDemo = context.controller.marketController::showDemoState,
                     onSelectStock = { symbol -> context.controller.selectStock(symbol) },
+                    onUpdateMarketQuery = context.controller.marketController::updateQuery,
+                    onSelectMarketFilter = context.controller.marketController::selectFilter,
+                    onSelectMarketSort = context.controller.marketController::selectSort,
+                    onToggleMarketFavoritesOnly = context.controller.marketController::toggleFavoritesOnly,
+                    onClearMarketDiscoveryFilters = context.controller.marketController::clearDiscoveryFilters,
+                    onToggleMarketFavorite = context.controller.marketController::toggleFavorite,
+                    onAskAiAboutStock = context.controller::askAiAboutStock,
                     onUpdateChatDraft = context.controller.chatController::updateDraft,
                     onSendChat = context.controller.chatController::send,
                     onRetryChat = context.controller.chatController::retry,
+                    onClearChat = context.controller.chatController::clearConversation,
                 )
                 stockHomeTabBar(
                     selectedTab = context.viewState.selectedTab,
@@ -86,14 +101,22 @@ fun ViewContainer<*, *>.stockHomeContent(
     onRetryMarket: () -> Unit,
     onSelectMarketDemo: (MarketDemoState) -> Unit,
     onSelectStock: (String) -> Unit,
+    onUpdateMarketQuery: (String) -> Unit,
+    onSelectMarketFilter: (MarketFilter) -> Unit,
+    onSelectMarketSort: (MarketSort) -> Unit,
+    onToggleMarketFavoritesOnly: () -> Unit,
+    onClearMarketDiscoveryFilters: () -> Unit,
+    onToggleMarketFavorite: (String) -> Unit,
+    onAskAiAboutStock: (String) -> Unit,
     onUpdateChatDraft: (String) -> Unit,
     onSendChat: () -> Unit,
     onRetryChat: () -> Unit,
+    onClearChat: () -> Unit,
 ) {
     View {
         attr {
             flex(DesignTokens.Size.FILL)
-            padding(DesignTokens.Spacing.MD)
+            padding(DesignTokens.Size.PAGE_GUTTER)
             backgroundColor(DesignTokens.Colors.surfaceBase)
         }
         when (state.destination) {
@@ -103,6 +126,13 @@ fun ViewContainer<*, *>.stockHomeContent(
                     onRetry = onRetryMarket,
                     onSelectDemo = onSelectMarketDemo,
                     onSelectStock = onSelectStock,
+                    onUpdateQuery = onUpdateMarketQuery,
+                    onSelectFilter = onSelectMarketFilter,
+                    onSelectSort = onSelectMarketSort,
+                    onToggleFavoritesOnly = onToggleMarketFavoritesOnly,
+                    onClearDiscoveryFilters = onClearMarketDiscoveryFilters,
+                    onToggleFavorite = onToggleMarketFavorite,
+                    onAskAi = onAskAiAboutStock,
                 )
                 AppTab.AI -> aiResearchContentSlot(
                     state = state.chat,
@@ -110,6 +140,7 @@ fun ViewContainer<*, *>.stockHomeContent(
                     onUpdateDraft = onUpdateChatDraft,
                     onSend = onSendChat,
                     onRetry = onRetryChat,
+                    onClear = onClearChat,
                     onSelectStock = onSelectStock,
                 )
             }
@@ -133,8 +164,8 @@ fun ViewContainer<*, *>.stockHomeTabBar(
             padding(
                 top = DesignTokens.Spacing.XS,
                 bottom = DesignTokens.Spacing.XS,
-                left = DesignTokens.Spacing.MD,
-                right = DesignTokens.Spacing.MD,
+                left = DesignTokens.Size.PAGE_GUTTER,
+                right = DesignTokens.Size.PAGE_GUTTER,
             )
             backgroundColor(DesignTokens.Colors.surfaceBase)
         }
@@ -158,7 +189,7 @@ private fun ViewContainer<*, *>.stockHomeHeader() {
             height(DesignTokens.Size.HEADER)
             flexDirectionRow()
             alignItemsCenter()
-            padding(left = DesignTokens.Spacing.MD, right = DesignTokens.Spacing.MD)
+            padding(left = DesignTokens.Size.PAGE_GUTTER, right = DesignTokens.Size.PAGE_GUTTER)
             backgroundColor(DesignTokens.Colors.primary)
         }
         View {

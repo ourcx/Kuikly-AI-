@@ -3,6 +3,7 @@ package com.ourcx.kuiklystock.ui.component
 import com.ourcx.kuiklystock.domain.ChatContentBlock
 import com.ourcx.kuiklystock.domain.ChatMessage
 import com.ourcx.kuiklystock.domain.ChatMessageStatus
+import com.ourcx.kuiklystock.domain.ChatProvider
 import com.ourcx.kuiklystock.domain.ChatRole
 import com.ourcx.kuiklystock.domain.ChatState
 import com.ourcx.kuiklystock.domain.LoadState
@@ -30,6 +31,7 @@ fun ViewContainer<*, *>.aiResearchContentSlot(
     onUpdateDraft: (String) -> Unit,
     onSend: () -> Unit,
     onRetry: () -> Unit,
+    onClear: () -> Unit,
     onSelectStock: (String) -> Unit,
 ) {
     View {
@@ -38,7 +40,12 @@ fun ViewContainer<*, *>.aiResearchContentSlot(
             borderRadius(DesignTokens.Radius.LG)
             backgroundColor(DesignTokens.Colors.surfaceAlt)
         }
-        chatHeader(state.connectionStatus)
+        chatHeader(
+            status = state.connectionStatus,
+            provider = state.provider,
+            canClear = state.messages.isNotEmpty() && !state.isSending,
+            onClear = onClear,
+        )
         chatConversation(
             state = state,
             marketState = marketState,
@@ -51,7 +58,12 @@ fun ViewContainer<*, *>.aiResearchContentSlot(
     }
 }
 
-private fun ViewContainer<*, *>.chatHeader(status: WorkBuddyConnectionStatus) {
+private fun ViewContainer<*, *>.chatHeader(
+    status: WorkBuddyConnectionStatus,
+    provider: ChatProvider,
+    canClear: Boolean,
+    onClear: () -> Unit,
+) {
     View {
         attr {
             padding(DesignTokens.Spacing.MD)
@@ -81,6 +93,61 @@ private fun ViewContainer<*, *>.chatHeader(status: WorkBuddyConnectionStatus) {
                 fontSize(DesignTokens.Typography.CAPTION)
                 color(DesignTokens.Colors.onSurfaceMuted)
                 marginTop(DesignTokens.Spacing.XXS)
+            }
+        }
+        View {
+            attr {
+                flexDirectionRow()
+                alignItemsCenter()
+                marginTop(DesignTokens.Spacing.SM)
+            }
+            providerBadge(provider)
+            if (canClear) {
+                View {
+                    attr {
+                        marginLeft(DesignTokens.Spacing.SM)
+                        padding(
+                            top = DesignTokens.Spacing.XXS,
+                            bottom = DesignTokens.Spacing.XXS,
+                            left = DesignTokens.Spacing.SM,
+                            right = DesignTokens.Spacing.SM,
+                        )
+                        borderRadius(DesignTokens.Radius.FULL)
+                        backgroundColor(DesignTokens.Colors.surfaceElevated)
+                    }
+                    event { click { onClear() } }
+                    Text {
+                        attr {
+                            text("清空会话")
+                            fontSize(DesignTokens.Typography.CAPTION)
+                            color(DesignTokens.Colors.onSurfaceMuted)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun ViewContainer<*, *>.providerBadge(provider: ChatProvider) {
+    val isLocal = provider == ChatProvider.LOCAL
+    View {
+        attr {
+            padding(
+                top = DesignTokens.Spacing.XXS,
+                bottom = DesignTokens.Spacing.XXS,
+                left = DesignTokens.Spacing.SM,
+                right = DesignTokens.Spacing.SM,
+            )
+            borderRadius(DesignTokens.Radius.FULL)
+            backgroundColor(if (isLocal) DesignTokens.Colors.primarySoft else DesignTokens.Colors.surfaceElevated)
+        }
+        Text {
+            attr {
+                text(if (isLocal) "本地分析 · 始终可用" else "WorkBuddy · 在线分析")
+                fontSize(DesignTokens.Typography.CAPTION)
+                fontWeightBold()
+                color(if (isLocal) DesignTokens.Colors.accentTertiary else DesignTokens.Colors.accentPrimary)
             }
         }
     }
@@ -137,7 +204,7 @@ private fun ViewContainer<*, *>.chatConversation(
             backgroundColor(DesignTokens.Colors.surfaceBase)
         }
         if (state.messages.isEmpty() && !state.isSending) {
-            chatWelcome(state.connectionStatus, onQuestion = { question ->
+            chatWelcome(state.provider, onQuestion = { question ->
                 onUpdateDraft(question)
                 onSend()
             })
@@ -153,7 +220,7 @@ private fun ViewContainer<*, *>.chatConversation(
 }
 
 private fun ViewContainer<*, *>.chatWelcome(
-    status: WorkBuddyConnectionStatus,
+    provider: ChatProvider,
     onQuestion: (String) -> Unit,
 ) {
     View {
@@ -164,7 +231,7 @@ private fun ViewContainer<*, *>.chatWelcome(
         }
         Text {
             attr {
-                text(if (status == WorkBuddyConnectionStatus.UNCONFIGURED) "连接 WorkBuddy，开启智能投研" else "今天想研究哪只股票？")
+                text("今天想研究哪只股票？")
                 fontSize(DesignTokens.Typography.H3)
                 fontWeightBold()
                 color(DesignTokens.Colors.onSurface)
@@ -173,8 +240,8 @@ private fun ViewContainer<*, *>.chatWelcome(
         Text {
             attr {
                 text(
-                    if (status == WorkBuddyConnectionStatus.UNCONFIGURED) {
-                        "当前尚未配置服务。完成连接后，可围绕名称、代码和走势发起问题。"
+                    if (provider == ChatProvider.LOCAL) {
+                        "无需配置即可使用本地行情分析；连接 WorkBuddy 后会自动优先使用在线能力。"
                     } else {
                         "输入股票名称或代码，WorkBuddy 会结合实时行情生成结构化分析。"
                     },
@@ -184,10 +251,8 @@ private fun ViewContainer<*, *>.chatWelcome(
                 marginTop(DesignTokens.Spacing.XS)
             }
         }
-        if (status != WorkBuddyConnectionStatus.UNCONFIGURED) {
-            suggestionChip("腾讯控股有哪些积极信号？", onQuestion)
-            suggestionChip("AAPL 最近走势与风险如何？", onQuestion)
-        }
+        suggestionChip("腾讯控股有哪些积极信号？", onQuestion)
+        suggestionChip("AAPL 最近走势与风险如何？", onQuestion)
     }
 }
 
@@ -229,7 +294,7 @@ private fun ViewContainer<*, *>.chatMessage(
         }
         Text {
             attr {
-                text(if (isUser) "YOU / 你" else "WORKBUDDY / AI")
+                text(if (isUser) "YOU / 你" else "AI / 智能分析")
                 fontSize(DesignTokens.Typography.CAPTION)
                 fontWeightBold()
                 color(if (isUser) DesignTokens.Colors.accentTertiary else DesignTokens.Colors.accentPrimary)
@@ -281,7 +346,7 @@ private fun ViewContainer<*, *>.chatGeneratingBubble() {
             borderRadius(DesignTokens.Radius.LG)
             backgroundColor(DesignTokens.Colors.surfaceElevated)
         }
-        chatStatusLabel("✦ WorkBuddy 正在生成分析…", failed = false)
+        chatStatusLabel("✦ 正在生成分析，连接异常时将自动切换本地…", failed = false)
     }
 }
 

@@ -1,11 +1,13 @@
 package com.ourcx.kuiklystock.presentation
 
 import com.ourcx.kuiklystock.data.ChatRepository
+import com.ourcx.kuiklystock.data.InMemoryChatRepository
 import com.ourcx.kuiklystock.data.InMemoryStockRepository
 import com.ourcx.kuiklystock.domain.AppDestination
 import com.ourcx.kuiklystock.domain.AppTab
 import com.ourcx.kuiklystock.domain.ChatContentBlock
 import com.ourcx.kuiklystock.domain.ChatMessageStatus
+import com.ourcx.kuiklystock.domain.ChatProvider
 import com.ourcx.kuiklystock.domain.ChatRequest
 import com.ourcx.kuiklystock.domain.ChatResponse
 import com.ourcx.kuiklystock.domain.ChatRole
@@ -142,6 +144,95 @@ class ChatAndHomeControllerTest {
         assertEquals(AppTab.AI, controller.state.selectedTab)
         assertIs<AppDestination.Home>(controller.state.destination)
         assertNull(controller.state.detail)
+    }
+
+    @Test
+    fun clearConversationResetsMessagesAndKeepsLocalProviderAvailable() {
+        val controller = ChatController(InMemoryChatRepository())
+        controller.updateDraft("分析 AAPL")
+        controller.send()
+        assertTrue(controller.state.messages.isNotEmpty())
+        assertEquals(ChatProvider.LOCAL, controller.state.provider)
+
+        controller.clearConversation()
+
+        assertTrue(controller.state.messages.isEmpty())
+        assertEquals("", controller.state.draft)
+        assertEquals(ChatProvider.LOCAL, controller.state.provider)
+        assertEquals(WorkBuddyConnectionStatus.UNCONFIGURED, controller.state.connectionStatus)
+    }
+
+    @Test
+    fun clearConversationResetsDraftErrorAndConversationIdAfterCompletedTurns() {
+        var attempts = 0
+        val controller = ChatController(StubChatRepository { _ ->
+            attempts += 1
+            if (attempts == 1) {
+                Result.success(ChatResponse(answer = "Complete", conversationId = "conversation-9"))
+            } else {
+                Result.failure(IllegalStateException("Unavailable"))
+            }
+        })
+        controller.updateDraft("First question")
+        controller.send()
+        controller.updateDraft("Second question")
+        controller.send()
+        controller.updateDraft("Unsent draft")
+
+        controller.clearConversation()
+
+        assertTrue(controller.state.messages.isEmpty())
+        assertEquals("", controller.state.draft)
+        assertNull(controller.state.error)
+        assertNull(controller.state.conversationId)
+        assertFalse(controller.state.isSending)
+    }
+
+    @Test
+    fun clearConversationIsIgnoredWhileRequestIsInFlight() {
+        val repository = DeferredChatRepository()
+        val controller = ChatController(repository)
+        controller.updateDraft("Pending question")
+        controller.send()
+        val pendingState = controller.state
+
+        controller.clearConversation()
+
+        assertEquals(pendingState, controller.state)
+        assertTrue(controller.state.isSending)
+    }
+
+    @Test
+    fun oneTapAiSwitchesTabAndSendsStockSpecificQuestion() {
+        val repository = DeferredChatRepository()
+        val controller = StockHomeController(
+            stockRepository = InMemoryStockRepository(),
+            chatRepository = repository,
+        )
+
+        controller.askAiAboutStock("AAPL")
+
+        assertEquals(AppTab.AI, controller.state.selectedTab)
+        assertIs<AppDestination.Home>(controller.state.destination)
+        assertEquals(1, repository.requests.size)
+        assertTrue(repository.requests.single().question.contains("苹果（AAPL）"))
+    }
+
+    @Test
+    fun oneTapAiIgnoresBlankAndUnknownSymbolsWithoutChangingHomeState() {
+        val repository = DeferredChatRepository()
+        val controller = StockHomeController(
+            stockRepository = InMemoryStockRepository(),
+            chatRepository = repository,
+        )
+        controller.selectStock("AAPL")
+        val originalState = controller.state
+
+        controller.askAiAboutStock("   ")
+        controller.askAiAboutStock("UNKNOWN")
+
+        assertEquals(originalState, controller.state)
+        assertTrue(repository.requests.isEmpty())
     }
 }
 

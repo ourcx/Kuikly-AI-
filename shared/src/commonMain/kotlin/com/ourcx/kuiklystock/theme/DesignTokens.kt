@@ -78,8 +78,10 @@ object DesignTokens {
     object Size {
         const val FILL = 1f
         const val HAIRLINE = 1f
+        /** Main content gutter. Kept explicit so page columns share the design's 16 px grid. */
+        const val PAGE_GUTTER = 16f
         const val STATUS_DOT = 8f
-        const val HEADER = 72f
+        const val HEADER = 64f
         const val TAB_BAR = 64f
         const val TAB_INDICATOR = 3f
         const val SPARKLINE_HEIGHT = 88f
@@ -87,5 +89,7 @@ object DesignTokens {
         const val SPARKLINE_BAR_GAP = 3f
         const val CHAT_INPUT_HEIGHT = 44f
         const val CHAT_SEND_WIDTH = 72f
+        const val MARKET_PRICE_COLUMN = 132f
+        const val MARKET_ACTION_HEIGHT = 36f
     }
 }

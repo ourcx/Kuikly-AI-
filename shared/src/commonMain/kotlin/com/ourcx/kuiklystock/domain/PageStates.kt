@@ -5,6 +5,19 @@ enum class AppTab {
     AI,
 }
 
+enum class MarketFilter {
+    ALL,
+    HK,
+    CN,
+    US,
+}
+
+enum class MarketSort {
+    DEFAULT,
+    GAINERS,
+    LOSERS,
+}
+
 sealed interface AppDestination {
     data object Home : AppDestination
 
@@ -16,6 +29,12 @@ sealed interface AppDestination {
 
 data class MarketState(
     val quotes: LoadState<List<StockQuote>> = LoadState.Loading,
+    val query: String = "",
+    val filter: MarketFilter = MarketFilter.ALL,
+    val sort: MarketSort = MarketSort.DEFAULT,
+    val favoriteSymbols: Set<String> = emptySet(),
+    val favoritesOnly: Boolean = false,
+    val totalCount: Int = 0,
 )
 
 data class StockDetailContent(
@@ -35,6 +54,7 @@ data class ChatState(
     val error: String? = null,
     val conversationId: String? = null,
     val connectionStatus: WorkBuddyConnectionStatus = WorkBuddyConnectionStatus.UNCONFIGURED,
+    val provider: ChatProvider = ChatProvider.WORKBUDDY,
 )
 
 data class StockHomeState(

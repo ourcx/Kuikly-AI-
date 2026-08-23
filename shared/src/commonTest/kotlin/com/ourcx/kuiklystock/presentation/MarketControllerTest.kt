@@ -1,15 +1,116 @@
 package com.ourcx.kuiklystock.presentation
 
+import com.ourcx.kuiklystock.data.InMemoryStockRepository
 import com.ourcx.kuiklystock.data.StockRepository
 import com.ourcx.kuiklystock.domain.LoadState
+import com.ourcx.kuiklystock.domain.MarketFilter
+import com.ourcx.kuiklystock.domain.MarketSort
 import com.ourcx.kuiklystock.domain.MarketState
 import com.ourcx.kuiklystock.domain.StockInsight
 import com.ourcx.kuiklystock.domain.StockQuote
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
 class MarketControllerTest {
+    @Test
+    fun discoveryControlsComposeWithoutMutatingSourceOrder() {
+        val controller = MarketController(InMemoryStockRepository())
+        controller.load()
+
+        controller.updateQuery("nasdaq")
+        assertEquals(listOf("AAPL", "TSLA"), controller.contentSymbols())
+        controller.selectSort(MarketSort.GAINERS)
+        assertEquals(listOf("AAPL", "TSLA"), controller.contentSymbols())
+        controller.selectSort(MarketSort.LOSERS)
+        assertEquals(listOf("TSLA", "AAPL"), controller.contentSymbols())
+
+        controller.clearDiscoveryFilters()
+        assertEquals(listOf("00700", "09988", "600519", "AAPL", "TSLA"), controller.contentSymbols())
+    }
+
+    @Test
+    fun favoritesFilterUpdatesImmediatelyAndKeepsSelectionAcrossReset() {
+        val controller = MarketController(InMemoryStockRepository())
+        controller.load()
+        controller.toggleFavorite(" aapl ")
+        controller.selectFilter(MarketFilter.US)
+        controller.toggleFavoritesOnly()
+
+        assertEquals(listOf("AAPL"), controller.contentSymbols())
+        assertEquals(setOf("AAPL"), controller.state.favoriteSymbols)
+
+        controller.clearDiscoveryFilters()
+        assertEquals(setOf("AAPL"), controller.state.favoriteSymbols)
+        assertEquals(MarketFilter.ALL, controller.state.filter)
+    }
+
+    @Test
+    fun unmatchedSearchPublishesRecoverableEmptyState() {
+        val controller = MarketController(InMemoryStockRepository())
+        controller.load()
+        controller.updateQuery("missing")
+
+        assertIs<LoadState.Empty>(controller.state.quotes)
+        assertEquals(0, controller.state.totalCount)
+
+        controller.clearDiscoveryFilters()
+        assertEquals(5, controller.contentSymbols().size)
+    }
+
+    @Test
+    fun queryNormalizesWhitespaceAndMatchesSymbolNameAndExchangeIgnoringCase() {
+        val controller = MarketController(InMemoryStockRepository())
+        controller.load()
+
+        controller.updateQuery("  aApL  ")
+        assertEquals(listOf("AAPL"), controller.contentSymbols())
+        assertEquals("aApL", controller.state.query)
+
+        controller.updateQuery("苹果")
+        assertEquals(listOf("AAPL"), controller.contentSymbols())
+
+        controller.updateQuery("sse")
+        assertEquals(listOf("600519"), controller.contentSymbols())
+    }
+
+    @Test
+    fun marketFiltersAndSortOrdersCoverEveryDiscoveryBranch() {
+        val controller = MarketController(InMemoryStockRepository())
+        controller.load()
+
+        controller.selectFilter(MarketFilter.HK)
+        assertEquals(listOf("00700", "09988"), controller.contentSymbols())
+
+        controller.selectFilter(MarketFilter.CN)
+        assertEquals(listOf("600519"), controller.contentSymbols())
+
+        controller.selectFilter(MarketFilter.US)
+        controller.selectSort(MarketSort.GAINERS)
+        val gainers = controller.contentChangePercents()
+        assertEquals(gainers.sortedDescending(), gainers)
+
+        controller.selectSort(MarketSort.LOSERS)
+        val losers = controller.contentChangePercents()
+        assertEquals(losers.sorted(), losers)
+        assertEquals(2, controller.state.totalCount)
+    }
+
+    @Test
+    fun blankFavoriteSymbolIsIgnoredAndFavoritesOnlyCanRecover() {
+        val controller = MarketController(InMemoryStockRepository())
+        controller.load()
+
+        controller.toggleFavorite("   ")
+        assertTrue(controller.state.favoriteSymbols.isEmpty())
+
+        controller.toggleFavoritesOnly()
+        assertIs<LoadState.Empty>(controller.state.quotes)
+        controller.toggleFavoritesOnly()
+        assertEquals(5, controller.contentSymbols().size)
+    }
+
     @Test
     fun loadPublishesLoadingThenContent() {
         val observed = mutableListOf<MarketState>()
@@ -60,6 +161,12 @@ class MarketControllerTest {
         assertEquals("未找到股票：MISS", assertIs<LoadState.Error>(controller.selectStock("MISS").content).message)
     }
 }
+
+private fun MarketController.contentSymbols(): List<String> =
+    assertIs<LoadState.Content<List<StockQuote>>>(state.quotes).value.map(StockQuote::symbol)
+
+private fun MarketController.contentChangePercents(): List<Double> =
+    assertIs<LoadState.Content<List<StockQuote>>>(state.quotes).value.map(StockQuote::changePercent)
 
 private class FakeStockRepository(
     private val quotes: List<StockQuote> = listOf(QUOTE),

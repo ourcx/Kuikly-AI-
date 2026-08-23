@@ -22,6 +22,7 @@ kotlin {
             dependencies {
                 implementation("com.tencent.kuikly-open:core:2.16.0-2.0.21-ohos")
                 implementation("com.tencent.kuikly-open:core-annotations:2.16.0-2.0.21-ohos")
+                implementation("org.jetbrains.kotlinx:atomicfu:0.27.0")
             }
         }
         val commonTest by getting {

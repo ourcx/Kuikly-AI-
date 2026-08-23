@@ -1,5 +1,6 @@
 package com.ourcx.kuiklystock.data
 
+import com.ourcx.kuiklystock.domain.ChatProvider
 import com.ourcx.kuiklystock.domain.ChatRequest
 import com.ourcx.kuiklystock.domain.ChatResponse
 import com.ourcx.kuiklystock.domain.StockInsight
@@ -46,6 +47,7 @@ class InMemoryChatRepository : ChatRepository {
             conversationId = request.conversationId,
             symbols = listOf(matchedSymbol),
             showTrend = true,
+            provider = ChatProvider.LOCAL,
         )
     }
 

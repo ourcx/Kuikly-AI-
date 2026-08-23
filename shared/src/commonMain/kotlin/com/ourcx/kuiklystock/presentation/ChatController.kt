@@ -2,10 +2,13 @@ package com.ourcx.kuiklystock.presentation
 
 import com.ourcx.kuiklystock.data.ChatRepository
 import com.ourcx.kuiklystock.data.InMemoryChatRepository
+import com.ourcx.kuiklystock.data.ResilientChatRepository
+import com.ourcx.kuiklystock.data.WorkBuddyChatRepository
 import com.ourcx.kuiklystock.domain.ChatContext
 import com.ourcx.kuiklystock.domain.ChatContentBlock
 import com.ourcx.kuiklystock.domain.ChatMessage
 import com.ourcx.kuiklystock.domain.ChatMessageStatus
+import com.ourcx.kuiklystock.domain.ChatProvider
 import com.ourcx.kuiklystock.domain.ChatRequest
 import com.ourcx.kuiklystock.domain.ChatRole
 import com.ourcx.kuiklystock.domain.ChatState
@@ -18,13 +21,7 @@ class ChatController(
     private val onStateChanged: (ChatState) -> Unit = {},
     private val contextProvider: () -> ChatContext = { ChatContext() },
 ) {
-    var state: ChatState = ChatState(
-        connectionStatus = if (chatRepository.isConfigured) {
-            WorkBuddyConnectionStatus.AVAILABLE
-        } else {
-            WorkBuddyConnectionStatus.UNCONFIGURED
-        },
-    )
+    var state: ChatState = initialState()
         private set
 
     private var nextMessageId = 1L
@@ -79,6 +76,17 @@ class ChatController(
         requestAssistant(question)
     }
 
+    /**
+     * Observable contract:
+     * - Ignores clear attempts while a request is in flight.
+     * - Resets transient chat state to the repository-backed initial experience.
+     * - Preserves retry/dedup behavior by leaving message id generation monotonic.
+     */
+    fun clearConversation() {
+        if (state.isSending) return
+        updateState(initialState())
+    }
+
     private fun requestAssistant(question: String) {
         val assistantMessageId = newMessageId()
         updateState(
@@ -129,7 +137,12 @@ class ChatController(
                                 isSending = false,
                                 error = null,
                                 conversationId = response.conversationId ?: state.conversationId,
-                                connectionStatus = WorkBuddyConnectionStatus.AVAILABLE,
+                                connectionStatus = if (response.provider == ChatProvider.WORKBUDDY) {
+                                    WorkBuddyConnectionStatus.AVAILABLE
+                                } else {
+                                    WorkBuddyConnectionStatus.UNCONFIGURED
+                                },
+                                provider = response.provider,
                             ),
                         )
                     },
@@ -159,6 +172,30 @@ class ChatController(
                 connectionStatus = WorkBuddyConnectionStatus.ERROR,
             ),
         )
+    }
+
+    private fun initialState(): ChatState = ChatState(
+        connectionStatus = initialConnectionStatus(),
+        provider = initialProvider(),
+    )
+
+    private fun initialConnectionStatus(): WorkBuddyConnectionStatus {
+        val workBuddyConfigured = when (chatRepository) {
+            is ResilientChatRepository -> chatRepository.isRemoteConfigured
+            is InMemoryChatRepository -> false
+            else -> chatRepository.isConfigured
+        }
+        return if (workBuddyConfigured) {
+            WorkBuddyConnectionStatus.AVAILABLE
+        } else {
+            WorkBuddyConnectionStatus.UNCONFIGURED
+        }
+    }
+
+    private fun initialProvider(): ChatProvider = when (chatRepository) {
+        is InMemoryChatRepository, is ResilientChatRepository -> ChatProvider.LOCAL
+        is WorkBuddyChatRepository -> ChatProvider.WORKBUDDY
+        else -> if (chatRepository.isConfigured) ChatProvider.WORKBUDDY else ChatProvider.LOCAL
     }
 
     private fun newMessageId(): String = "message-${nextMessageId++}"

@@ -5,9 +5,12 @@ KuiklyStock 是使用 Kuikly UI DSL 构建的股票行情与 AI 投研演示应�
 ## 功能清单
 
 - 行情与 AI 投研双 Tab 首页。
-- 自选行情列表，展示股票名称、代码、最新价、涨跌额和涨跌幅。
+- 行情发现支持按名称、代码、交易所搜索，按港股、A 股、美股筛选，并支持涨跌幅排序。
+- 会话级自选列表，支持收藏、仅看自选，以及空结果一键恢复筛选。
+- 股票卡片展示统一对齐的名称、代码、最新价、涨跌额和涨跌幅，并支持一键进入详情或发起 AI 分析。
 - 统一股票详情页，展示价格、高低价、成交量、趋势与 AI 风险解读。
-- AI 投研会话，支持问题输入、发送、生成状态、失败提示与重试。
+- AI 投研会话支持问题输入、快捷问题、一键个股分析、发送、清空、生成状态、失败提示与重试。
+- AI 默认采用 WorkBuddy 优先、本地行情分析兜底的双通道策略，并在界面明确展示实际来源。
 - AI 回复支持 Markdown、股票卡片和迷你走势图，并可从股票卡片进入统一详情页。
 - 行情流程支持内容、加载、空数据、失败及重试等演示状态。
 
@@ -48,11 +51,13 @@ shared/
 Fixture Repository → Controller → Page State → Kuikly UI
 ```
 
-WorkBuddy AI 会话数据流为：
+AI 会话数据流为：
 
 ```text
-Kuikly UI DSL → ChatController → WorkBuddyChatRepository → BridgeModule
-    → KRBridgeModule → 合作方 HTTPS 代理 → WorkBuddy OpenAPI
+Kuikly UI DSL → ChatController → ResilientChatRepository
+    ├── 已配置且可用 → WorkBuddyChatRepository → BridgeModule
+    │   → KRBridgeModule → 合作方 HTTPS 代理 → WorkBuddy OpenAPI
+    └── 未配置或失败 → InMemoryChatRepository → 本地行情分析
 ```
 
 `shared` 中的 Kuikly UI DSL 和控制器只依赖 Repository 与 Bridge 契约；Android 宿主负责 HTTPS 网络请求。行情 `data` 层仍可在后续替换为真实服务实现，而无需改动页面状态结构。
@@ -89,7 +94,7 @@ Kuikly UI DSL → ChatController → WorkBuddyChatRepository → BridgeModule
 WORKBUDDY_PROXY_URL="https://proxy.example.com/workbuddy/chat" ./gradlew :androidApp:assembleDebug --no-daemon --max-workers=1
 ```
 
-`WORKBUDDY_PROXY_URL` 在构建时写入应用的 `BuildConfig`，修改后需要重新构建并安装 APK。变量未设置时默认为空字符串，应用仍可启动，但 AI 页面会显示待连接（未配置）状态，并在发送问题时提示先配置 HTTPS 代理地址。客户端仅接受协议为 `https` 且包含有效主机名的地址。
+`WORKBUDDY_PROXY_URL` 在构建时写入应用的 `BuildConfig`，修改后需要重新构建并安装 APK。客户端仅接受协议为 `https` 且包含有效主机名的地址。变量未设置、代理超时、非 2xx 或响应无效时，应用会自动切换为本地行情分析，不会让 AI 功能不可用；界面会明确标识“本地分析”，不会伪装为在线 WorkBuddy 结果。
 
 `local.properties` 只用于 Android SDK 等本机工具链路径；不建议用它保存合作方地址，更不得写入凭证或其他敏感内容。构建示例中的域名仅为占位符。
 
@@ -156,12 +161,12 @@ Android 客户端向 `WORKBUDDY_PROXY_URL` 指定的合作方接口发送 `POST`
 
 - 行情 Tab 默认展示多市场股票 Fixture，可进入任意股票详情。
 - 行情页由控制器统一建模加载、内容、空数据和错误状态；错误状态支持重试。
-- AI 投研需要配置合作方 HTTPS 代理；未配置时保留完整页面并显示待连接与配置提示，不会直接请求 WorkBuddy OpenAPI。
+- AI 投研无需配置即可使用本地行情分析；配置合作方 HTTPS 代理后优先使用 WorkBuddy，调用失败时自动降级。
 - 所有行情、观点与时间均为演示数据，不构成投资建议。
 
 ## DesignTokens 规范
 
-页面颜色、字号、间距、圆角与通用尺寸统一由 `shared/src/commonMain/kotlin/com/ourcx/kuiklystock/theme/DesignTokens.kt` 管理。视觉基调为深色蓝黑背景、slate 卡片、蓝色强调色，以及红涨绿跌的行情语义。
+页面颜色、字号、间距、圆角与通用尺寸统一由 `shared/src/commonMain/kotlin/com/ourcx/kuiklystock/theme/DesignTokens.kt` 管理。视觉严格采用 `DESIGN.md` 的深靛蓝夜空背景、深色悬浮卡片、霓虹粉主操作、霓虹青辅助高亮，以及红涨绿跌的行情语义；页面壳层、内容卡片和底部导航共用 12px 水平栅格。
 
 新增或调整 UI 时应优先复用现有 Token，避免在页面和组件中散落视觉常量。当前需求没有提供精确的颜色十六进制值；后续若设计规范更新，应在 `DesignTokens.kt` 中单点替换并统一生效。
 
@@ -172,5 +177,5 @@ AI 会话中的 Markdown 内容使用 `KuiklyMarkdown` 1.0.6-2.1.21，并通过�
 ## 当前限制
 
 - 当前仅启用 Android 构建目标；仓库中的 iOS、OpenHarmony 等目录不代表本 Demo 已完成对应平台适配。
-- 行情能力仍为本地 Fixture；AI 能力依赖外部合作方 HTTPS 代理及其 WorkBuddy OpenAPI 配置。本项目不包含实时行情、账号体系、交易能力或生产级数据持久化。
+- 行情能力仍为本地 Fixture；未配置 WorkBuddy 时 AI 使用这些行情生成确定性本地分析。本项目不包含实时行情、账号体系、交易能力或生产级数据持久化，自选仅保留在当前应用会话。
 - AI 回复中的结构化股票元数据用于演示；元数据不可用时应保留 Markdown 正文作为降级展示。
