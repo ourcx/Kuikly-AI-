@@ -1,5 +1,7 @@
 package com.ourcx.kuiklystock.data
 
+import com.ourcx.kuiklystock.domain.ChatRequest
+import com.ourcx.kuiklystock.domain.ChatResponse
 import com.ourcx.kuiklystock.domain.StockInsight
 import com.ourcx.kuiklystock.domain.StockQuote
 
@@ -16,15 +18,21 @@ class InMemoryStockRepository : StockRepository {
 
 /** Deterministic AI response source; questions containing `失败` exercise the retry path. */
 class InMemoryChatRepository : ChatRepository {
-    override fun ask(question: String): String {
-        val normalizedQuestion = question.trim()
+    override val isConfigured: Boolean = true
+
+    override fun ask(request: ChatRequest, callback: (Result<ChatResponse>) -> Unit) {
+        callback(runCatching { createResponse(request) })
+    }
+
+    private fun createResponse(request: ChatRequest): ChatResponse {
+        val normalizedQuestion = request.question.trim()
         if (normalizedQuestion.contains(FAILURE_KEYWORD)) {
             throw ChatFixtureException(DEMONSTRATION_FAILURE_MESSAGE)
         }
 
         val matchedSymbol = findMentionedSymbol(normalizedQuestion) ?: DEFAULT_CHAT_SYMBOL
         val quote = QUOTES_BY_SYMBOL.getValue(matchedSymbol)
-        return buildString {
+        val answer = buildString {
             appendLine("## ${quote.name}（${quote.symbol}）行情速览")
             appendLine()
             appendLine("- 最新价：${quote.price}")
@@ -32,9 +40,13 @@ class InMemoryChatRepository : ChatRepository {
             appendLine("- 观察：${INSIGHTS_BY_SYMBOL.getValue(matchedSymbol).summary}")
             appendLine()
             appendLine("> 内容仅供演示，不构成投资建议")
-            appendLine()
-            append("<!--stock-ai:{\"symbols\":[\"$matchedSymbol\"],\"showTrend\":true}-->")
         }
+        return ChatResponse(
+            answer = answer,
+            conversationId = request.conversationId,
+            symbols = listOf(matchedSymbol),
+            showTrend = true,
+        )
     }
 
     private fun findMentionedSymbol(question: String): String? {

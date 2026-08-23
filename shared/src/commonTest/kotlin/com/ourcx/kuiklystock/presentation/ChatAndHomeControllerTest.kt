@@ -6,8 +6,11 @@ import com.ourcx.kuiklystock.domain.AppDestination
 import com.ourcx.kuiklystock.domain.AppTab
 import com.ourcx.kuiklystock.domain.ChatContentBlock
 import com.ourcx.kuiklystock.domain.ChatMessageStatus
+import com.ourcx.kuiklystock.domain.ChatRequest
+import com.ourcx.kuiklystock.domain.ChatResponse
 import com.ourcx.kuiklystock.domain.ChatRole
 import com.ourcx.kuiklystock.domain.LoadState
+import com.ourcx.kuiklystock.domain.WorkBuddyConnectionStatus
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -19,8 +22,15 @@ class ChatAndHomeControllerTest {
     @Test
     fun chatSendIgnoresBlankAndBuildsStructuredAssistantResponse() {
         val controller = ChatController(
-            chatRepository = StubChatRepository {
-                "正文<!--stock-ai:{\"symbols\":[\"AAPL\"],\"showTrend\":true}-->"
+            chatRepository = StubChatRepository { request ->
+                Result.success(
+                    ChatResponse(
+                        answer = "Structured answer",
+                        conversationId = "conversation-1",
+                        symbols = listOf("AAPL"),
+                        showTrend = true,
+                    ),
+                )
             },
         )
 
@@ -28,15 +38,17 @@ class ChatAndHomeControllerTest {
         controller.send()
         assertTrue(controller.state.messages.isEmpty())
 
-        controller.updateDraft("  分析苹果  " )
+        controller.updateDraft("  Analyze Apple  " )
         controller.send()
 
         assertEquals(2, controller.state.messages.size)
         assertEquals(ChatRole.USER, controller.state.messages[0].role)
-        assertEquals("分析苹果", assertIs<ChatContentBlock.Markdown>(controller.state.messages[0].blocks.single()).text)
+        assertEquals("Analyze Apple", assertIs<ChatContentBlock.Markdown>(controller.state.messages[0].blocks.single()).text)
         val assistant = controller.state.messages[1]
         assertEquals(ChatMessageStatus.COMPLETE, assistant.status)
         assertEquals(3, assistant.blocks.size)
+        assertEquals("conversation-1", controller.state.conversationId)
+        assertEquals(WorkBuddyConnectionStatus.AVAILABLE, controller.state.connectionStatus)
         assertFalse(controller.state.isSending)
         assertNull(controller.state.error)
     }
@@ -44,15 +56,16 @@ class ChatAndHomeControllerTest {
     @Test
     fun chatFailureCanRetryWithoutDuplicatingUserMessage() {
         var attempts = 0
-        val controller = ChatController(StubChatRepository {
+        val controller = ChatController(StubChatRepository { _ ->
             attempts += 1
-            if (attempts == 1) error("暂时失败") else "恢复成功"
+            if (attempts == 1) Result.failure(IllegalStateException("Temporary failure"))
+            else Result.success(ChatResponse(answer = "Recovered"))
         })
 
-        controller.updateDraft("分析腾讯")
+        controller.updateDraft("Analyze Tencent")
         controller.send()
         assertEquals(ChatMessageStatus.FAILED, controller.state.messages.last().status)
-        assertEquals("暂时失败", controller.state.error)
+        assertEquals("Temporary failure", controller.state.error)
 
         controller.retry()
 
@@ -60,6 +73,40 @@ class ChatAndHomeControllerTest {
         assertEquals(1, controller.state.messages.count { it.role == ChatRole.USER })
         assertEquals(ChatMessageStatus.COMPLETE, controller.state.messages.last().status)
         assertEquals(2, attempts)
+    }
+
+    @Test
+    fun chatSendPreventsDuplicateRequestsAndContinuesConversation() {
+        val repository = DeferredChatRepository()
+        val controller = ChatController(chatRepository = repository)
+
+        controller.updateDraft("First question")
+        controller.send()
+        controller.updateDraft("Ignored while sending")
+        controller.send()
+
+        assertEquals(1, repository.requests.size)
+        assertEquals(WorkBuddyConnectionStatus.SENDING, controller.state.connectionStatus)
+        repository.complete(ChatResponse(answer = "First answer", conversationId = "conversation-7"))
+
+        controller.updateDraft("Follow up")
+        controller.send()
+
+        assertEquals("conversation-7", repository.requests.last().conversationId)
+    }
+
+    @Test
+    fun unconfiguredChatReportsConfigurationErrorWithoutCallingRepository() {
+        val repository = DeferredChatRepository(isConfigured = false)
+        val controller = ChatController(chatRepository = repository)
+
+        controller.updateDraft("Analyze AAPL")
+        controller.send()
+
+        assertTrue(repository.requests.isEmpty())
+        assertEquals(ChatMessageStatus.FAILED, controller.state.messages.last().status)
+        assertEquals(WorkBuddyConnectionStatus.ERROR, controller.state.connectionStatus)
+        assertFalse(controller.state.isSending)
     }
 
     @Test
@@ -99,7 +146,27 @@ class ChatAndHomeControllerTest {
 }
 
 private class StubChatRepository(
-    private val answer: (String) -> String,
+    private val answer: (ChatRequest) -> Result<ChatResponse>,
 ) : ChatRepository {
-    override fun ask(question: String): String = answer(question)
+    override val isConfigured: Boolean = true
+
+    override fun ask(request: ChatRequest, callback: (Result<ChatResponse>) -> Unit) {
+        callback(answer(request))
+    }
+}
+
+private class DeferredChatRepository(
+    override val isConfigured: Boolean = true,
+) : ChatRepository {
+    val requests = mutableListOf<ChatRequest>()
+    private var callback: ((Result<ChatResponse>) -> Unit)? = null
+
+    override fun ask(request: ChatRequest, callback: (Result<ChatResponse>) -> Unit) {
+        requests += request
+        this.callback = callback
+    }
+
+    fun complete(response: ChatResponse) {
+        requireNotNull(callback).invoke(Result.success(response))
+    }
 }

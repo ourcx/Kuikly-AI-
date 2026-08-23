@@ -1,16 +1,17 @@
 package com.ourcx.kuiklystock
 
 import com.ourcx.kuiklystock.base.BasePager
-import com.ourcx.kuiklystock.data.InMemoryChatRepository
+import com.ourcx.kuiklystock.base.bridgeModule
 import com.ourcx.kuiklystock.data.InMemoryStockRepository
+import com.ourcx.kuiklystock.data.WorkBuddyChatRepository
 import com.ourcx.kuiklystock.domain.AppDestination
 import com.ourcx.kuiklystock.domain.AppTab
 import com.ourcx.kuiklystock.domain.StockHomeState
 import com.ourcx.kuiklystock.presentation.MarketDemoState
 import com.ourcx.kuiklystock.presentation.StockHomeController
 import com.ourcx.kuiklystock.theme.DesignTokens
-import com.ourcx.kuiklystock.ui.component.marketContentSlot
 import com.ourcx.kuiklystock.ui.component.aiResearchContentSlot
+import com.ourcx.kuiklystock.ui.component.marketContentSlot
 import com.ourcx.kuiklystock.ui.component.stockDetailContentSlot
 import com.tencent.kuikly.core.annotations.Page
 import com.tencent.kuikly.core.base.ViewBuilder
@@ -24,11 +25,17 @@ import com.tencent.kuikly.core.views.View
 internal class StockHomePage : BasePager() {
     private var viewState: StockHomeState by observable(StockHomeState())
 
-    private val controller = StockHomeController(
-        stockRepository = InMemoryStockRepository(),
-        chatRepository = InMemoryChatRepository(),
-        onStateChanged = { state -> viewState = state },
-    )
+    private val controller by lazy {
+        val bridgeModule = bridgeModule
+        StockHomeController(
+            stockRepository = InMemoryStockRepository(),
+            chatRepository = WorkBuddyChatRepository(
+                isConfigured = bridgeModule.isWorkBuddyConfigured(),
+                requestInvoker = bridgeModule::requestWorkBuddy,
+            ),
+            onStateChanged = { state -> viewState = state },
+        )
+    }
 
     override fun created() {
         super.created()
@@ -41,13 +48,13 @@ internal class StockHomePage : BasePager() {
         return {
             attr {
                 flexDirectionColumn()
-                backgroundColor(DesignTokens.Colors.background)
+                backgroundColor(DesignTokens.Colors.surfaceBase)
             }
 
             View {
                 attr {
                     height(pagerData.statusBarHeight)
-                    backgroundColor(DesignTokens.Colors.background)
+                    backgroundColor(DesignTokens.Colors.primary)
                 }
             }
             stockHomeHeader()
@@ -87,7 +94,7 @@ fun ViewContainer<*, *>.stockHomeContent(
         attr {
             flex(DesignTokens.Size.FILL)
             padding(DesignTokens.Spacing.MD)
-            backgroundColor(DesignTokens.Colors.background)
+            backgroundColor(DesignTokens.Colors.surfaceBase)
         }
         when (state.destination) {
             AppDestination.Home -> when (state.selectedTab) {
@@ -122,18 +129,26 @@ fun ViewContainer<*, *>.stockHomeTabBar(
 ) {
     View {
         attr {
-            height(DesignTokens.Size.HAIRLINE)
-            backgroundColor(DesignTokens.Colors.border)
-        }
-    }
-    View {
-        attr {
             height(DesignTokens.Size.TAB_BAR)
-            flexDirectionRow()
-            backgroundColor(DesignTokens.Colors.surface)
+            padding(
+                top = DesignTokens.Spacing.XS,
+                bottom = DesignTokens.Spacing.XS,
+                left = DesignTokens.Spacing.MD,
+                right = DesignTokens.Spacing.MD,
+            )
+            backgroundColor(DesignTokens.Colors.surfaceBase)
         }
-        stockHomeTabItem("行情", AppTab.MARKET, selectedTab, onSelectTab)
-        stockHomeTabItem("AI 投研", AppTab.AI, selectedTab, onSelectTab)
+        View {
+            attr {
+                flex(DesignTokens.Size.FILL)
+                flexDirectionRow()
+                borderRadius(DesignTokens.Radius.LG)
+                padding(DesignTokens.Spacing.XXS)
+                backgroundColor(DesignTokens.Colors.surfaceAlt)
+            }
+            stockHomeTabItem("行情", "MARKET", AppTab.MARKET, selectedTab, onSelectTab)
+            stockHomeTabItem("AI 投研", "WORKBUDDY", AppTab.AI, selectedTab, onSelectTab)
+        }
     }
 }
 
@@ -144,7 +159,25 @@ private fun ViewContainer<*, *>.stockHomeHeader() {
             flexDirectionRow()
             alignItemsCenter()
             padding(left = DesignTokens.Spacing.MD, right = DesignTokens.Spacing.MD)
-            backgroundColor(DesignTokens.Colors.background)
+            backgroundColor(DesignTokens.Colors.primary)
+        }
+        View {
+            attr {
+                width(DesignTokens.Spacing.XL)
+                height(DesignTokens.Spacing.XL)
+                allCenter()
+                borderRadius(DesignTokens.Radius.LG)
+                backgroundColor(DesignTokens.Colors.accentPrimary)
+                marginRight(DesignTokens.Spacing.SM)
+            }
+            Text {
+                attr {
+                    text("K")
+                    fontSize(DesignTokens.Typography.H4)
+                    fontWeightBold()
+                    color(DesignTokens.Colors.onPrimary)
+                }
+            }
         }
         View {
             attr {
@@ -153,16 +186,16 @@ private fun ViewContainer<*, *>.stockHomeHeader() {
             Text {
                 attr {
                     text("KuiklyStock")
-                    fontSize(DesignTokens.Typography.BRAND)
+                    fontSize(DesignTokens.Typography.H2)
                     fontWeightBold()
-                    color(DesignTokens.Colors.textPrimary)
+                    color(DesignTokens.Colors.onSurface)
                 }
             }
             Text {
                 attr {
                     text("跨端智能行情终端")
                     fontSize(DesignTokens.Typography.CAPTION)
-                    color(DesignTokens.Colors.textMuted)
+                    color(DesignTokens.Colors.onSurfaceMuted)
                     marginTop(DesignTokens.Spacing.XXS)
                 }
             }
@@ -171,10 +204,10 @@ private fun ViewContainer<*, *>.stockHomeHeader() {
             attr {
                 flexDirectionRow()
                 alignItemsCenter()
-                borderRadius(DesignTokens.Radius.PILL)
+                borderRadius(DesignTokens.Radius.FULL)
                 padding(
-                    top = DesignTokens.Spacing.XS,
-                    bottom = DesignTokens.Spacing.XS,
+                    top = DesignTokens.Spacing.XXS,
+                    bottom = DesignTokens.Spacing.XXS,
                     left = DesignTokens.Spacing.SM,
                     right = DesignTokens.Spacing.SM,
                 )
@@ -184,8 +217,8 @@ private fun ViewContainer<*, *>.stockHomeHeader() {
                 attr {
                     width(DesignTokens.Size.STATUS_DOT)
                     height(DesignTokens.Size.STATUS_DOT)
-                    borderRadius(DesignTokens.Radius.PILL)
-                    backgroundColor(DesignTokens.Colors.fall)
+                    borderRadius(DesignTokens.Radius.FULL)
+                    backgroundColor(DesignTokens.Colors.accentTertiary)
                     marginRight(DesignTokens.Spacing.XS)
                 }
             }
@@ -193,7 +226,7 @@ private fun ViewContainer<*, *>.stockHomeHeader() {
                 attr {
                     text("在线")
                     fontSize(DesignTokens.Typography.CAPTION)
-                    color(DesignTokens.Colors.textSecondary)
+                    color(DesignTokens.Colors.onSurface)
                 }
             }
         }
@@ -202,6 +235,7 @@ private fun ViewContainer<*, *>.stockHomeHeader() {
 
 private fun ViewContainer<*, *>.stockHomeTabItem(
     label: String,
+    eyebrow: String,
     tab: AppTab,
     selectedTab: AppTab,
     onSelectTab: (AppTab) -> Unit,
@@ -211,72 +245,31 @@ private fun ViewContainer<*, *>.stockHomeTabItem(
         attr {
             flex(DesignTokens.Size.FILL)
             allCenter()
+            borderRadius(DesignTokens.Radius.LG)
             backgroundColor(
-                if (selected) DesignTokens.Colors.accentMuted else DesignTokens.Colors.transparent,
+                if (selected) DesignTokens.Colors.accentPrimary else DesignTokens.Colors.transparent,
             )
         }
         event { click { onSelectTab(tab) } }
         Text {
             attr {
+                text(eyebrow)
+                fontSize(DesignTokens.Typography.CAPTION)
+                color(
+                    if (selected) DesignTokens.Colors.onPrimary else DesignTokens.Colors.accentTertiary,
+                )
+            }
+        }
+        Text {
+            attr {
                 text(label)
-                fontSize(DesignTokens.Typography.LABEL)
-                color(if (selected) DesignTokens.Colors.accent else DesignTokens.Colors.textSecondary)
+                fontSize(DesignTokens.Typography.BODY_LARGE)
+                color(
+                    if (selected) DesignTokens.Colors.onPrimary else DesignTokens.Colors.onSurfaceMuted,
+                )
                 if (selected) {
                     fontWeightBold()
                 }
-            }
-        }
-        View {
-            attr {
-                height(DesignTokens.Size.TAB_INDICATOR)
-                absolutePosition(
-                    bottom = DesignTokens.Spacing.XS,
-                    left = DesignTokens.Spacing.XL,
-                    right = DesignTokens.Spacing.XL,
-                )
-                borderRadius(DesignTokens.Radius.PILL)
-                backgroundColor(
-                    if (selected) DesignTokens.Colors.accent else DesignTokens.Colors.transparent,
-                )
-            }
-        }
-    }
-}
-
-private fun ViewContainer<*, *>.stockHomePlaceholder(
-    eyebrow: String,
-    title: String,
-    description: String,
-) {
-    View {
-        attr {
-            flex(DesignTokens.Size.FILL)
-            borderRadius(DesignTokens.Radius.LG)
-            padding(DesignTokens.Spacing.LG)
-            backgroundColor(DesignTokens.Colors.surface)
-        }
-        Text {
-            attr {
-                text(eyebrow)
-                fontSize(DesignTokens.Typography.CAPTION)
-                color(DesignTokens.Colors.accent)
-            }
-        }
-        Text {
-            attr {
-                text(title)
-                fontSize(DesignTokens.Typography.TITLE)
-                fontWeightBold()
-                color(DesignTokens.Colors.textPrimary)
-                marginTop(DesignTokens.Spacing.SM)
-            }
-        }
-        Text {
-            attr {
-                text(description)
-                fontSize(DesignTokens.Typography.BODY)
-                color(DesignTokens.Colors.textSecondary)
-                marginTop(DesignTokens.Spacing.XS)
             }
         }
     }

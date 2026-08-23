@@ -1,5 +1,8 @@
 package com.ourcx.kuiklystock.domain
 
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+
 data class ChatMessage(
     val id: String,
     val role: ChatRole,
@@ -26,3 +29,44 @@ enum class ChatMessageStatus {
     GENERATING,
     FAILED,
 }
+
+enum class WorkBuddyConnectionStatus {
+    UNCONFIGURED,
+    AVAILABLE,
+    SENDING,
+    ERROR,
+}
+
+@Serializable
+data class ChatRequest(
+    val question: String,
+    @SerialName("conversation_id")
+    val conversationId: String? = null,
+    val context: ChatContext = ChatContext(),
+)
+
+@Serializable
+data class ChatContext(
+    val quotes: List<ChatQuoteContext> = emptyList(),
+)
+
+@Serializable
+data class ChatQuoteContext(
+    val symbol: String,
+    val name: String,
+    val exchange: String,
+    val price: Double,
+    val change: Double,
+    @SerialName("change_percent")
+    val changePercent: Double,
+)
+
+@Serializable
+data class ChatResponse(
+    val answer: String,
+    @SerialName("conversation_id")
+    val conversationId: String? = null,
+    val symbols: List<String> = emptyList(),
+    @SerialName("show_trend")
+    val showTrend: Boolean = false,
+)

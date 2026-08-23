@@ -1,6 +1,6 @@
 # KuiklyStock
 
-KuiklyStock 是使用 Kuikly UI DSL 构建的股票行情与 AI 投研演示应用。项目采用 Kotlin Multiplatform 组织共享代码，当前实际启用并验证的运行目标为 Android；行情与 AI 回复均来自本地 Fixture，不依赖线上服务。
+KuiklyStock 是使用 Kuikly UI DSL 构建的股票行情与 AI 投研演示应用。项目采用 Kotlin Multiplatform 组织共享代码，当前实际启用并验证的运行目标为 Android；行情数据来自本地 Fixture，AI 会话可通过合作方 HTTPS 代理接入 WorkBuddy OpenAPI。
 
 ## 功能清单
 
@@ -42,13 +42,20 @@ shared/
     └── commonTest/            # 共享业务逻辑与控制器测试
 ```
 
-主要数据流为：
+行情数据流为：
 
 ```text
 Fixture Repository → Controller → Page State → Kuikly UI
 ```
 
-`data` 层可在后续替换为真实行情或 AI 服务实现，`domain`、`presentation` 与 UI 状态结构无需依赖具体数据来源。
+WorkBuddy AI 会话数据流为：
+
+```text
+Kuikly UI DSL → ChatController → WorkBuddyChatRepository → BridgeModule
+    → KRBridgeModule → 合作方 HTTPS 代理 → WorkBuddy OpenAPI
+```
+
+`shared` 中的 Kuikly UI DSL 和控制器只依赖 Repository 与 Bridge 契约；Android 宿主负责 HTTPS 网络请求。行情 `data` 层仍可在后续替换为真实服务实现，而无需改动页面状态结构。
 
 ## 本地运行环境
 
@@ -76,16 +83,80 @@ Fixture Repository → Controller → Page State → Kuikly UI
 ./gradlew :androidApp:assembleDebug --no-daemon --max-workers=1
 ```
 
+需要连接 WorkBuddy 时，通过构建进程环境变量提供合作方 HTTPS 代理地址：
+
+```bash
+WORKBUDDY_PROXY_URL="https://proxy.example.com/workbuddy/chat" ./gradlew :androidApp:assembleDebug --no-daemon --max-workers=1
+```
+
+`WORKBUDDY_PROXY_URL` 在构建时写入应用的 `BuildConfig`，修改后需要重新构建并安装 APK。变量未设置时默认为空字符串，应用仍可启动，但 AI 页面会显示待连接（未配置）状态，并在发送问题时提示先配置 HTTPS 代理地址。客户端仅接受协议为 `https` 且包含有效主机名的地址。
+
+`local.properties` 只用于 Android SDK 等本机工具链路径；不建议用它保存合作方地址，更不得写入凭证或其他敏感内容。构建示例中的域名仅为占位符。
+
 构建成功后，Debug APK 位于 `androidApp/build/outputs/apk/debug/`。本次交付已在 JDK 17、Android SDK API 34 与 Build-Tools 34 环境完成共享单测及 Debug APK 构建；若其他环境构建失败，请先核对这些工具链版本和依赖仓库访问状态。
+
+## WorkBuddy 代理接口契约
+
+Android 客户端向 `WORKBUDDY_PROXY_URL` 指定的合作方接口发送 `POST` 请求，请求与响应的 `Content-Type` 均为 `application/json`。合作方后端负责认证 WorkBuddy OpenAPI、转发请求，并将响应整理为以下客户端契约。
+
+请求体：
+
+```json
+{
+  "question": "请分析示例标的近期走势",
+  "conversation_id": "example-conversation-id",
+  "context": {
+    "quotes": [
+      {
+        "symbol": "DEMO",
+        "name": "示例标的",
+        "exchange": "EXAMPLE",
+        "price": 100.0,
+        "change": 1.2,
+        "change_percent": 1.21
+      }
+    ]
+  }
+}
+```
+
+- `question`：必填，用户问题。
+- `conversation_id`：可选，上一轮响应返回的会话标识，用于续接上下文。
+- `context.quotes`：当前本地行情摘要数组，元素包含 `symbol`、`name`、`exchange`、`price`、`change` 和 `change_percent`。
+
+响应体：
+
+```json
+{
+  "answer": "示例 Markdown 回答",
+  "conversation_id": "example-conversation-id",
+  "symbols": ["DEMO"],
+  "show_trend": true
+}
+```
+
+- `answer`：必填，供 KuiklyMarkdown 渲染的回答正文。
+- `conversation_id`：可选，客户端保存后用于下一轮请求。
+- `symbols`：可选，关联股票代码列表；缺省时按空列表处理。
+- `show_trend`：可选，是否展示关联标的趋势；缺省时为 `false`。
+
+合作方接口应返回 HTTP 2xx 和符合上述契约的 JSON。超时、非 2xx、网络错误或无效 JSON 会在客户端转换为可读的失败状态，用户可以对原问题重试。
+
+## WorkBuddy 安全边界
+
+- Android 客户端只连接构建时配置的合作方 HTTPS 代理，不直接调用 WorkBuddy OpenAPI，也不接受 HTTP 明文地址。
+- WorkBuddy 凭证、`access_token`、`refresh_token`、`client_secret`，以及 OAuth PKCE verifier、authorization code 等票据只能由合作方后端持有和处理，禁止写入客户端、构建变量、`local.properties`、源码或版本库。
+- 合作方后端负责凭证安全存储、OAuth 流程、令牌刷新、访问控制、限流、审计和上游错误收敛；不得把上游凭证透传给客户端。
+- 客户端请求只携带接口契约所列业务字段，不应把凭证、个人信息或其他敏感数据放入 `question`、`conversation_id` 或 `context.quotes`。
+- 客户端不记录请求正文或响应正文；展示给用户的网络错误会限制长度并脱敏常见令牌和密钥字段。
 
 ## Fixture 演示
 
-项目默认使用内存 Repository 提供确定性的离线数据，启动后无需配置网络接口或凭证：
+项目默认使用内存 Repository 提供确定性的离线行情数据；行情功能启动后无需配置网络接口或凭证：
 
 - 行情 Tab 默认展示多市场股票 Fixture，可进入任意股票详情。
-- 行情页顶部的演示入口可切换“内容”“空数据”和“错误”状态；错误状态支持重试。加载状态由控制器统一建模。
-- AI 投研会根据问题中出现的股票代码或名称返回对应的 Markdown 解读、股票卡片和趋势数据。未匹配股票时使用默认演示标的。
-- 在 AI 问题中包含“失败”可触发确定性的失败流程，并验证重试交互。
+- 行情页由控制器统一建模加载、内容、空数据和错误状态；错误状态支持重试。
+- AI 投研需要配置合作方 HTTPS 代理；未配置时保留完整页面并显示待连接与配置提示，不会直接请求 WorkBuddy OpenAPI。
 - 所有行情、观点与时间均为演示数据，不构成投资建议。
 
 ## DesignTokens 规范
@@ -101,5 +172,5 @@ AI 会话中的 Markdown 内容使用 `KuiklyMarkdown` 1.0.6-2.1.21，并通过�
 ## 当前限制
 
 - 当前仅启用 Android 构建目标；仓库中的 iOS、OpenHarmony 等目录不代表本 Demo 已完成对应平台适配。
-- 行情和 AI 能力均为本地 Fixture，不包含实时行情、真实模型调用、账号体系、交易能力或生产级数据持久化。
+- 行情能力仍为本地 Fixture；AI 能力依赖外部合作方 HTTPS 代理及其 WorkBuddy OpenAPI 配置。本项目不包含实时行情、账号体系、交易能力或生产级数据持久化。
 - AI 回复中的结构化股票元数据用于演示；元数据不可用时应保留 Markdown 正文作为降级展示。

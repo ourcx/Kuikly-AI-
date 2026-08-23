@@ -6,6 +6,8 @@ import com.ourcx.kuiklystock.data.InMemoryStockRepository
 import com.ourcx.kuiklystock.data.StockRepository
 import com.ourcx.kuiklystock.domain.AppDestination
 import com.ourcx.kuiklystock.domain.AppTab
+import com.ourcx.kuiklystock.domain.ChatContext
+import com.ourcx.kuiklystock.domain.ChatQuoteContext
 import com.ourcx.kuiklystock.domain.StockDetailState
 import com.ourcx.kuiklystock.domain.StockHomeState
 
@@ -21,8 +23,29 @@ class StockHomeController(
         updateState(state.copy(market = marketState))
     }
 
-    val chatController = ChatController(chatRepository) { chatState ->
-        updateState(state.copy(chat = chatState))
+    val chatController = ChatController(
+        chatRepository = chatRepository,
+        contextProvider = {
+            ChatContext(
+                quotes = stockRepository.getQuotes().map { quote ->
+                    ChatQuoteContext(
+                        symbol = quote.symbol,
+                        name = quote.name,
+                        exchange = quote.exchange,
+                        price = quote.price,
+                        change = quote.change,
+                        changePercent = quote.changePercent,
+                    )
+                },
+            )
+        },
+        onStateChanged = { chatState ->
+            updateState(state.copy(chat = chatState))
+        },
+    )
+
+    init {
+        state = state.copy(chat = chatController.state)
     }
 
     fun selectTab(tab: AppTab) {

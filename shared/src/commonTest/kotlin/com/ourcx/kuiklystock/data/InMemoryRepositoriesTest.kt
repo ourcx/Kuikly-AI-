@@ -1,5 +1,7 @@
 package com.ourcx.kuiklystock.data
 
+import com.ourcx.kuiklystock.domain.ChatRequest
+import com.ourcx.kuiklystock.domain.ChatResponse
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -28,18 +30,26 @@ class InMemoryRepositoriesTest {
     fun chatRepositoryMatchesCodeAndNameAndFallsBackToDefault() {
         val repository = InMemoryChatRepository()
 
-        assertTrue(repository.ask("分析 aapl").contains("苹果（AAPL）"))
-        assertTrue(repository.ask("看看贵州茅台").contains("贵州茅台（600519）"))
-        assertTrue(repository.ask("今天关注什么").contains("腾讯控股（00700）"))
-        assertTrue(repository.ask("分析 TSLA").endsWith("<!--stock-ai:{\"symbols\":[\"TSLA\"],\"showTrend\":true}-->"))
+        assertTrue(repository.askSuccessfully("Analyze AAPL").answer.contains("AAPL"))
+        assertTrue(repository.askSuccessfully("600519").answer.contains("600519"))
+        assertEquals(listOf("00700"), repository.askSuccessfully("market focus").symbols)
+        val response = repository.askSuccessfully("Analyze TSLA")
+        assertEquals(listOf("TSLA"), response.symbols)
+        assertTrue(response.showTrend)
     }
 
     @Test
     fun chatRepositoryExposesDeterministicFailureScenario() {
-        val error = assertFailsWith<ChatFixtureException> {
-            InMemoryChatRepository().ask("请演示失败")
-        }
+        var result: Result<ChatResponse>? = null
+        InMemoryChatRepository().ask(ChatRequest(question = "\u5931\u8d25")) { result = it }
 
-        assertEquals("演示聊天服务暂时不可用，请重试", error.message)
+        assertTrue(requireNotNull(result).isFailure)
+        assertTrue(requireNotNull(result).exceptionOrNull() is ChatFixtureException)
     }
+}
+
+private fun InMemoryChatRepository.askSuccessfully(question: String): ChatResponse {
+    var result: Result<ChatResponse>? = null
+    ask(ChatRequest(question = question)) { result = it }
+    return requireNotNull(result).getOrThrow()
 }

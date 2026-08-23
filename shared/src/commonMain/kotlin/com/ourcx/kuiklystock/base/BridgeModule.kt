@@ -68,6 +68,38 @@ internal class BridgeModule : Module() {
         return syncCallNativeMethod(DATE_FORMATTER, params, null)
     }
 
+    fun isWorkBuddyConfigured(): Boolean {
+        return when (syncCallNativeMethod(IS_WORK_BUDDY_CONFIGURED, null, null).trim().lowercase()) {
+            "true", "1" -> true
+            else -> false
+        }
+    }
+
+    fun requestWorkBuddy(payload: String, callback: (Result<String>) -> Unit) {
+        val params = JSONObject().put(WORK_BUDDY_PAYLOAD, payload)
+        callNativeMethod(REQUEST_WORK_BUDDY, params) { response ->
+            callback(
+                response?.let(::parseWorkBuddyResponse)
+                    ?: Result.failure(IllegalStateException(WORK_BUDDY_EMPTY_RESPONSE_ERROR)),
+            )
+        }
+    }
+
+    private fun parseWorkBuddyResponse(response: JSONObject): Result<String> =
+        runCatching {
+            if (!response.has(WORK_BUDDY_SUCCESS)) {
+                throw IllegalStateException("WorkBuddy response is missing the success field")
+            }
+            if (!response.optBoolean(WORK_BUDDY_SUCCESS, false)) {
+                val message = response.optString(WORK_BUDDY_ERROR, WORK_BUDDY_DEFAULT_ERROR)
+                throw IllegalStateException(message.ifEmpty { WORK_BUDDY_DEFAULT_ERROR })
+            }
+            if (!response.has(WORK_BUDDY_DATA)) {
+                throw IllegalStateException("WorkBuddy response is missing the data field")
+            }
+            response.optString(WORK_BUDDY_DATA)
+        }
+
     private fun callNativeMethod(methodName: String, data: JSONObject?, callbackFn: CallbackFn?) {
         toNative(false, methodName, data?.toString(), callbackFn, false)
     }
@@ -84,5 +116,14 @@ internal class BridgeModule : Module() {
         const val SSO_REQUEST = "ssoRequest"
         const val CURRENT_TIMESTAMP = "currentTimestamp"
         const val DATE_FORMATTER = "dateFormatter"
+        const val IS_WORK_BUDDY_CONFIGURED = "isWorkBuddyConfigured"
+        const val REQUEST_WORK_BUDDY = "requestWorkBuddy"
+
+        private const val WORK_BUDDY_PAYLOAD = "payload"
+        private const val WORK_BUDDY_SUCCESS = "success"
+        private const val WORK_BUDDY_DATA = "data"
+        private const val WORK_BUDDY_ERROR = "error"
+        private const val WORK_BUDDY_DEFAULT_ERROR = "WorkBuddy request failed"
+        private const val WORK_BUDDY_EMPTY_RESPONSE_ERROR = "WorkBuddy response is empty"
     }
 }

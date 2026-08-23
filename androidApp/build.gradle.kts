@@ -3,6 +3,29 @@ plugins {
     kotlin("android")
 }
 
+fun String.toBuildConfigStringLiteral(): String = buildString {
+    append('"')
+    this@toBuildConfigStringLiteral.forEach { character ->
+        when (character) {
+            '\\' -> append("\\\\")
+            '"' -> append("\\\"")
+            '\b' -> append("\\b")
+            '\t' -> append("\\t")
+            '\n' -> append("\\n")
+            '\u000C' -> append("\\f")
+            '\r' -> append("\\r")
+            else -> {
+                if (character.code < 0x20 || character.code == 0x7F) {
+                    append("\\u%04x".format(character.code))
+                } else {
+                    append(character)
+                }
+            }
+        }
+    }
+    append('"')
+}
+
 android {
     namespace = "com.ourcx.kuiklystock"
     compileSdk = 34
@@ -12,6 +35,14 @@ android {
         targetSdk = 30
         versionCode = 1
         versionName = "1.0"
+        buildConfigField(
+            "String",
+            "WORKBUDDY_PROXY_URL",
+            System.getenv("WORKBUDDY_PROXY_URL").orEmpty().toBuildConfigStringLiteral(),
+        )
+    }
+    buildFeatures {
+        buildConfig = true
     }
 
     buildTypes {

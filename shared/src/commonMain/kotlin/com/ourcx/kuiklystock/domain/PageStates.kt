@@ -33,6 +33,8 @@ data class ChatState(
     val draft: String = "",
     val isSending: Boolean = false,
     val error: String? = null,
+    val conversationId: String? = null,
+    val connectionStatus: WorkBuddyConnectionStatus = WorkBuddyConnectionStatus.UNCONFIGURED,
 )
 
 data class StockHomeState(

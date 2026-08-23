@@ -5,43 +5,57 @@ import com.tencent.kuikly.core.base.Color
 /** Shared visual language for every KuiklyStock screen and component. */
 object DesignTokens {
     object ColorValues {
-        const val BACKGROUND = 0xFF08111FL
-        const val SURFACE = 0xFF111C2EL
-        const val SURFACE_ELEVATED = 0xFF17243AL
-        const val BORDER = 0xFF26364FL
-        const val ACCENT = 0xFF4C8DFFL
-        const val ACCENT_MUTED = 0xFF18345FL
-        const val TEXT_PRIMARY = 0xFFF3F7FFL
-        const val TEXT_SECONDARY = 0xFF94A3B8L
-        const val TEXT_MUTED = 0xFF64748BL
-        const val RISE = 0xFFF05252L
-        const val FALL = 0xFF22C55EL
-        const val NEUTRAL = 0xFF94A3B8L
+        const val PRIMARY = 0xFF0D0C22L
+        const val PRIMARY_SOFT = 0xFF3B395CL
+        const val SECONDARY = 0xFFFFFFFFL
+        const val SURFACE_BASE = 0xFF060318L
+        const val SURFACE_ALT = 0xFF0D0C22L
+        const val SURFACE_ELEVATED = 0xFF151338L
+        const val ON_PRIMARY = 0xFFFFFFFFL
+        const val ON_SECONDARY = 0xFF060318L
+        const val ON_SURFACE = 0xFFFFFFFFL
+        const val ON_SURFACE_MUTED = 0xFFBEB9CAL
+        const val BORDER_SUBTLE = 0xFF2A2745L
+        const val BORDER_STRONG = 0xFF3F3A66L
+        const val ACCENT_PRIMARY = 0xFFFF3366L
+        const val ACCENT_SECONDARY = 0xFFFF6347L
+        const val ACCENT_TERTIARY = 0xFF00E5FFL
+        const val SUCCESS = 0xFF19C37DL
+        const val DANGER = 0xFFFF3366L
+        const val INFO = 0xFF00B3FFL
         const val TRANSPARENT = 0x00000000L
     }
 
     object Colors {
-        val background = Color(ColorValues.BACKGROUND)
-        val surface = Color(ColorValues.SURFACE)
+        val primary = Color(ColorValues.PRIMARY)
+        val primarySoft = Color(ColorValues.PRIMARY_SOFT)
+        val secondary = Color(ColorValues.SECONDARY)
+        val surfaceBase = Color(ColorValues.SURFACE_BASE)
+        val surfaceAlt = Color(ColorValues.SURFACE_ALT)
         val surfaceElevated = Color(ColorValues.SURFACE_ELEVATED)
-        val border = Color(ColorValues.BORDER)
-        val accent = Color(ColorValues.ACCENT)
-        val accentMuted = Color(ColorValues.ACCENT_MUTED)
-        val textPrimary = Color(ColorValues.TEXT_PRIMARY)
-        val textSecondary = Color(ColorValues.TEXT_SECONDARY)
-        val textMuted = Color(ColorValues.TEXT_MUTED)
-        val rise = Color(ColorValues.RISE)
-        val fall = Color(ColorValues.FALL)
-        val neutral = Color(ColorValues.NEUTRAL)
+        val onPrimary = Color(ColorValues.ON_PRIMARY)
+        val onSecondary = Color(ColorValues.ON_SECONDARY)
+        val onSurface = Color(ColorValues.ON_SURFACE)
+        val onSurfaceMuted = Color(ColorValues.ON_SURFACE_MUTED)
+        val borderSubtle = Color(ColorValues.BORDER_SUBTLE)
+        val borderStrong = Color(ColorValues.BORDER_STRONG)
+        val accentPrimary = Color(ColorValues.ACCENT_PRIMARY)
+        val accentSecondary = Color(ColorValues.ACCENT_SECONDARY)
+        val accentTertiary = Color(ColorValues.ACCENT_TERTIARY)
+        val success = Color(ColorValues.SUCCESS)
+        val danger = Color(ColorValues.DANGER)
+        val info = Color(ColorValues.INFO)
         val transparent = Color(ColorValues.TRANSPARENT)
     }
 
     object Typography {
-        const val CAPTION = 11f
+        const val H1 = 32f
+        const val H2 = 24f
+        const val H3 = 20f
+        const val H4 = 18f
+        const val BODY_LARGE = 16f
         const val BODY = 14f
-        const val LABEL = 15f
-        const val TITLE = 20f
-        const val BRAND = 24f
+        const val CAPTION = 12f
     }
 
     object Spacing {
@@ -54,10 +68,11 @@ object DesignTokens {
     }
 
     object Radius {
-        const val SM = 8f
-        const val MD = 12f
-        const val LG = 18f
-        const val PILL = 999f
+        const val SM = 4f
+        const val MD = 8f
+        const val LG = 16f
+        const val XL = 24f
+        const val FULL = 999f
     }
 
     object Size {

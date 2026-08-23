@@ -1,5 +1,7 @@
 package com.ourcx.kuiklystock.data
 
+import com.ourcx.kuiklystock.domain.ChatRequest
+import com.ourcx.kuiklystock.domain.ChatResponse
 import com.ourcx.kuiklystock.domain.StockInsight
 import com.ourcx.kuiklystock.domain.StockQuote
 
@@ -23,12 +25,14 @@ interface StockRepository {
 }
 
 interface ChatRepository {
+    /** Whether this repository can currently accept chat requests. */
+    val isConfigured: Boolean
+
     /**
-     * Returns the assistant's raw Markdown, including optional trailing stock-ai metadata.
-     *
-     * @throws ChatFixtureException when the deterministic demonstration failure is requested.
+     * Starts a chat turn and reports its eventual response through [callback].
+     * Success and failure are both delivered through [Result].
      */
-    fun ask(question: String): String
+    fun ask(request: ChatRequest, callback: (Result<ChatResponse>) -> Unit)
 }
 
 class StockNotFoundException(

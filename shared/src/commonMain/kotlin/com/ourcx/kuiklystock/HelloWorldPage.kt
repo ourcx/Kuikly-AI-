@@ -12,15 +12,15 @@ internal class HelloWorldPage : BasePager() {
     override fun body(): ViewBuilder {
         return {
             attr {
-                backgroundColor(DesignTokens.Colors.background)
+                backgroundColor(DesignTokens.Colors.surfaceBase)
                 allCenter()
             }
 
             Text {
                 attr {
-                    fontSize(DesignTokens.Typography.BRAND)
+                    fontSize(DesignTokens.Typography.H2)
                     text("Hello, KuiklyStock!")
-                    color(DesignTokens.Colors.textPrimary)
+                    color(DesignTokens.Colors.onSurface)
                 }
             }
 
@@ -29,7 +29,7 @@ internal class HelloWorldPage : BasePager() {
                     fontSize(DesignTokens.Typography.BODY)
                     marginTop(DesignTokens.Spacing.SM)
                     text("Powered by Kuikly")
-                    color(DesignTokens.Colors.textSecondary)
+                    color(DesignTokens.Colors.onSurfaceMuted)
                 }
             }
         }

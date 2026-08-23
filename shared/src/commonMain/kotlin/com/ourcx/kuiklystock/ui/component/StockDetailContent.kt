@@ -26,7 +26,7 @@ fun ViewContainer<*, *>.stockDetailContentSlot(
         attr {
             flex(DesignTokens.Size.FILL)
             borderRadius(DesignTokens.Radius.LG)
-            backgroundColor(DesignTokens.Colors.surface)
+            backgroundColor(DesignTokens.Colors.surfaceBase)
         }
         detailBackButton(onBack)
         when (val content = state?.content) {
@@ -43,15 +43,22 @@ private fun ViewContainer<*, *>.detailBackButton(onBack: () -> Unit) {
     View {
         attr {
             padding(DesignTokens.Spacing.MD)
-            backgroundColor(DesignTokens.Colors.surface)
+            backgroundColor(DesignTokens.Colors.surfaceAlt)
         }
         event { click { onBack() } }
-        Text {
+        View {
             attr {
-                text("‹ 返回行情")
-                fontSize(DesignTokens.Typography.LABEL)
-                fontWeightBold()
-                color(DesignTokens.Colors.accent)
+                padding(DesignTokens.Spacing.SM)
+                borderRadius(DesignTokens.Radius.FULL)
+                backgroundColor(DesignTokens.Colors.accentPrimary)
+            }
+            Text {
+                attr {
+                    text("‹ 返回行情")
+                    fontSize(DesignTokens.Typography.BODY_LARGE)
+                    fontWeightBold()
+                    color(DesignTokens.Colors.onPrimary)
+                }
             }
         }
     }
@@ -81,9 +88,9 @@ fun ViewContainer<*, *>.stockCard(
     View {
         attr {
             padding(DesignTokens.Spacing.MD)
-            borderRadius(DesignTokens.Radius.MD)
-            backgroundColor(DesignTokens.Colors.surfaceElevated)
-            marginBottom(DesignTokens.Spacing.SM)
+            borderRadius(DesignTokens.Radius.LG)
+            backgroundColor(DesignTokens.Colors.surfaceAlt)
+            marginBottom(DesignTokens.Spacing.MD)
         }
         if (onClick != null) event { click { onClick(quote.symbol) } }
         View {
@@ -93,36 +100,44 @@ fun ViewContainer<*, *>.stockCard(
                 Text {
                     attr {
                         text(quote.name)
-                        fontSize(DesignTokens.Typography.TITLE)
+                        fontSize(DesignTokens.Typography.H3)
                         fontWeightBold()
-                        color(DesignTokens.Colors.textPrimary)
+                        color(DesignTokens.Colors.onSurface)
                     }
                 }
                 Text {
                     attr {
                         text("${quote.exchange} · ${quote.symbol}")
                         fontSize(DesignTokens.Typography.CAPTION)
-                        color(DesignTokens.Colors.textMuted)
+                        color(DesignTokens.Colors.accentTertiary)
                         marginTop(DesignTokens.Spacing.XXS)
                     }
-                }
-            }
-            Text {
-                attr {
-                    text(formatStockPrice(quote.price))
-                    fontSize(DesignTokens.Typography.TITLE)
-                    fontWeightBold()
-                    color(DesignTokens.Colors.textPrimary)
                 }
             }
         }
         Text {
             attr {
-                text("${quote.trendMarker()} ${formatStockChange(quote.change)}  ${formatStockChangePercent(quote.changePercent)}")
-                fontSize(DesignTokens.Typography.LABEL)
+                text(formatStockPrice(quote.price))
+                fontSize(DesignTokens.Typography.H1)
                 fontWeightBold()
-                color(trendColor)
+                color(DesignTokens.Colors.onSurface)
+                marginTop(DesignTokens.Spacing.LG)
+            }
+        }
+        View {
+            attr {
+                padding(DesignTokens.Spacing.XS)
+                borderRadius(DesignTokens.Radius.FULL)
+                backgroundColor(trendColor)
                 marginTop(DesignTokens.Spacing.SM)
+            }
+            Text {
+                attr {
+                    text("${quote.trendMarker()}  ${formatStockChange(quote.change)}  ${formatStockChangePercent(quote.changePercent)}")
+                    fontSize(DesignTokens.Typography.BODY)
+                    fontWeightBold()
+                    color(DesignTokens.Colors.onPrimary)
+                }
             }
         }
     }
@@ -133,17 +148,17 @@ fun ViewContainer<*, *>.metricGrid(quote: StockQuote) {
     View {
         attr {
             padding(DesignTokens.Spacing.MD)
-            borderRadius(DesignTokens.Radius.MD)
+            borderRadius(DesignTokens.Radius.LG)
             backgroundColor(DesignTokens.Colors.surfaceElevated)
-            marginBottom(DesignTokens.Spacing.SM)
+            marginBottom(DesignTokens.Spacing.MD)
         }
         Text {
             attr {
                 text("关键指标")
-                fontSize(DesignTokens.Typography.LABEL)
+                fontSize(DesignTokens.Typography.H4)
                 fontWeightBold()
-                color(DesignTokens.Colors.textPrimary)
-                marginBottom(DesignTokens.Spacing.SM)
+                color(DesignTokens.Colors.accentTertiary)
+                marginBottom(DesignTokens.Spacing.MD)
             }
         }
         metricRow("开盘", formatStockPrice(quote.open), "最高", formatStockPrice(quote.high))
@@ -170,12 +185,18 @@ private fun ViewContainer<*, *>.metricRow(
 
 private fun ViewContainer<*, *>.metricCell(label: String, value: String) {
     View {
-        attr { flex(DesignTokens.Size.FILL) }
+        attr {
+            flex(DesignTokens.Size.FILL)
+            padding(DesignTokens.Spacing.SM)
+            borderRadius(DesignTokens.Radius.MD)
+            backgroundColor(DesignTokens.Colors.surfaceAlt)
+            marginRight(DesignTokens.Spacing.XS)
+        }
         Text {
             attr {
                 text(label)
                 fontSize(DesignTokens.Typography.CAPTION)
-                color(DesignTokens.Colors.textMuted)
+                color(DesignTokens.Colors.onSurfaceMuted)
             }
         }
         Text {
@@ -183,7 +204,7 @@ private fun ViewContainer<*, *>.metricCell(label: String, value: String) {
                 text(value)
                 fontSize(DesignTokens.Typography.BODY)
                 fontWeightBold()
-                color(DesignTokens.Colors.textPrimary)
+                color(DesignTokens.Colors.onSurface)
                 marginTop(DesignTokens.Spacing.XXS)
             }
         }
@@ -197,17 +218,39 @@ fun ViewContainer<*, *>.sparkline(points: kotlin.collections.List<Double>, chang
     View {
         attr {
             padding(DesignTokens.Spacing.MD)
-            borderRadius(DesignTokens.Radius.MD)
-            backgroundColor(DesignTokens.Colors.surfaceElevated)
-            marginBottom(DesignTokens.Spacing.SM)
+            borderRadius(DesignTokens.Radius.LG)
+            backgroundColor(DesignTokens.Colors.surfaceAlt)
+            marginBottom(DesignTokens.Spacing.MD)
+        }
+        View {
+            attr { flexDirectionRow() }
+            View {
+                attr { flex(DesignTokens.Size.FILL) }
+                Text {
+                    attr {
+                        text("价格趋势")
+                        fontSize(DesignTokens.Typography.H4)
+                        fontWeightBold()
+                        color(DesignTokens.Colors.onSurface)
+                    }
+                }
+            }
+            Text {
+                attr {
+                    text(trendDescription(change))
+                    fontSize(DesignTokens.Typography.CAPTION)
+                    fontWeightBold()
+                    color(chartColor)
+                }
+            }
         }
         Text {
             attr {
-                text("价格趋势 · ${trendDescription(change)}")
-                fontSize(DesignTokens.Typography.LABEL)
-                fontWeightBold()
-                color(DesignTokens.Colors.textPrimary)
-                marginBottom(DesignTokens.Spacing.SM)
+                text("日内走势 · 实时区间")
+                fontSize(DesignTokens.Typography.CAPTION)
+                color(DesignTokens.Colors.accentTertiary)
+                marginTop(DesignTokens.Spacing.XXS)
+                marginBottom(DesignTokens.Spacing.MD)
             }
         }
         if (normalizedPoints.isEmpty()) {
@@ -215,7 +258,7 @@ fun ViewContainer<*, *>.sparkline(points: kotlin.collections.List<Double>, chang
                 attr {
                     text("暂无趋势数据")
                     fontSize(DesignTokens.Typography.BODY)
-                    color(DesignTokens.Colors.textSecondary)
+                    color(DesignTokens.Colors.onSurfaceMuted)
                 }
             }
         } else {
@@ -253,47 +296,60 @@ private fun ViewContainer<*, *>.insightCard(insight: StockInsight) {
     View {
         attr {
             padding(DesignTokens.Spacing.MD)
-            borderRadius(DesignTokens.Radius.MD)
-            backgroundColor(DesignTokens.Colors.accentMuted)
-            marginBottom(DesignTokens.Spacing.SM)
+            borderRadius(DesignTokens.Radius.LG)
+            backgroundColor(DesignTokens.Colors.surfaceElevated)
+            marginBottom(DesignTokens.Spacing.MD)
         }
-        Text {
+        View {
             attr {
-                text("AI 洞察 · ${insight.trendLabel}")
-                fontSize(DesignTokens.Typography.LABEL)
-                fontWeightBold()
-                color(DesignTokens.Colors.accent)
+                padding(DesignTokens.Spacing.XS)
+                borderRadius(DesignTokens.Radius.FULL)
+                backgroundColor(DesignTokens.Colors.accentPrimary)
+            }
+            Text {
+                attr {
+                    text("AI 洞察 · ${insight.trendLabel}")
+                    fontSize(DesignTokens.Typography.CAPTION)
+                    fontWeightBold()
+                    color(DesignTokens.Colors.onPrimary)
+                }
             }
         }
         Text {
             attr {
                 text(insight.summary)
-                fontSize(DesignTokens.Typography.BODY)
-                color(DesignTokens.Colors.textPrimary)
-                marginTop(DesignTokens.Spacing.SM)
+                fontSize(DesignTokens.Typography.BODY_LARGE)
+                fontWeightBold()
+                color(DesignTokens.Colors.onSurface)
+                marginTop(DesignTokens.Spacing.MD)
             }
         }
-        insightItems("积极信号", insight.signals, "＋")
-        insightItems("风险提示", insight.risks, "！")
+        insightItems("积极信号", insight.signals, "＋", DesignTokens.Colors.accentTertiary)
+        insightItems("风险提示", insight.risks, "！", DesignTokens.Colors.accentPrimary)
         Text {
             attr {
                 text("更新时间：${insight.updatedAt}")
                 fontSize(DesignTokens.Typography.CAPTION)
-                color(DesignTokens.Colors.textMuted)
+                color(DesignTokens.Colors.onSurfaceMuted)
                 marginTop(DesignTokens.Spacing.SM)
             }
         }
     }
 }
 
-private fun ViewContainer<*, *>.insightItems(title: String, items: kotlin.collections.List<String>, marker: String) {
+private fun ViewContainer<*, *>.insightItems(
+    title: String,
+    items: kotlin.collections.List<String>,
+    marker: String,
+    accentColor: Color,
+) {
     Text {
         attr {
             text(title)
             fontSize(DesignTokens.Typography.CAPTION)
             fontWeightBold()
-            color(DesignTokens.Colors.textSecondary)
-            marginTop(DesignTokens.Spacing.SM)
+            color(accentColor)
+            marginTop(DesignTokens.Spacing.MD)
         }
     }
     if (items.isEmpty()) {
@@ -308,7 +364,7 @@ private fun ViewContainer<*, *>.insightLine(value: String) {
         attr {
             text(value)
             fontSize(DesignTokens.Typography.BODY)
-            color(DesignTokens.Colors.textPrimary)
+            color(DesignTokens.Colors.onSurface)
             marginTop(DesignTokens.Spacing.XXS)
         }
     }
@@ -319,7 +375,7 @@ private fun ViewContainer<*, *>.disclaimer() {
         attr {
             text("免责声明：以上行情与 AI 洞察仅供信息参考，不构成任何投资建议。投资有风险，决策需谨慎。")
             fontSize(DesignTokens.Typography.CAPTION)
-            color(DesignTokens.Colors.textMuted)
+            color(DesignTokens.Colors.onSurfaceMuted)
             marginBottom(DesignTokens.Spacing.MD)
         }
     }
@@ -335,16 +391,16 @@ private fun ViewContainer<*, *>.detailStatus(title: String, description: String)
         Text {
             attr {
                 text(title)
-                fontSize(DesignTokens.Typography.TITLE)
+                fontSize(DesignTokens.Typography.H3)
                 fontWeightBold()
-                color(DesignTokens.Colors.textPrimary)
+                color(DesignTokens.Colors.onSurface)
             }
         }
         Text {
             attr {
                 text(description)
                 fontSize(DesignTokens.Typography.BODY)
-                color(DesignTokens.Colors.textSecondary)
+                color(DesignTokens.Colors.onSurfaceMuted)
                 marginTop(DesignTokens.Spacing.XS)
             }
         }
@@ -352,7 +408,7 @@ private fun ViewContainer<*, *>.detailStatus(title: String, description: String)
             attr {
                 text("可使用上方“返回行情”返回。")
                 fontSize(DesignTokens.Typography.CAPTION)
-                color(DesignTokens.Colors.textMuted)
+                color(DesignTokens.Colors.onSurfaceMuted)
                 marginTop(DesignTokens.Spacing.SM)
             }
         }
@@ -368,9 +424,9 @@ private fun StockQuote.trendMarker(): String = when {
 }
 
 private fun trendColor(change: Double): Color = when {
-    change > 0.0 -> DesignTokens.Colors.rise
-    change < 0.0 -> DesignTokens.Colors.fall
-    else -> DesignTokens.Colors.neutral
+    change > 0.0 -> DesignTokens.Colors.danger
+    change < 0.0 -> DesignTokens.Colors.success
+    else -> DesignTokens.Colors.onSurfaceMuted
 }
 
 private fun trendDescription(change: Double): String = when {

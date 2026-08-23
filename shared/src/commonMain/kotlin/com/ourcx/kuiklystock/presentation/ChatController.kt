@@ -2,19 +2,29 @@ package com.ourcx.kuiklystock.presentation
 
 import com.ourcx.kuiklystock.data.ChatRepository
 import com.ourcx.kuiklystock.data.InMemoryChatRepository
+import com.ourcx.kuiklystock.domain.ChatContext
 import com.ourcx.kuiklystock.domain.ChatContentBlock
 import com.ourcx.kuiklystock.domain.ChatMessage
 import com.ourcx.kuiklystock.domain.ChatMessageStatus
+import com.ourcx.kuiklystock.domain.ChatRequest
 import com.ourcx.kuiklystock.domain.ChatRole
 import com.ourcx.kuiklystock.domain.ChatState
+import com.ourcx.kuiklystock.domain.ParsedStockAiContent
+import com.ourcx.kuiklystock.domain.WorkBuddyConnectionStatus
 import com.ourcx.kuiklystock.domain.buildChatContentBlocks
-import com.ourcx.kuiklystock.domain.parseStockAiMetadata
 
 class ChatController(
     private val chatRepository: ChatRepository = InMemoryChatRepository(),
     private val onStateChanged: (ChatState) -> Unit = {},
+    private val contextProvider: () -> ChatContext = { ChatContext() },
 ) {
-    var state: ChatState = ChatState()
+    var state: ChatState = ChatState(
+        connectionStatus = if (chatRepository.isConfigured) {
+            WorkBuddyConnectionStatus.AVAILABLE
+        } else {
+            WorkBuddyConnectionStatus.UNCONFIGURED
+        },
+    )
         private set
 
     private var nextMessageId = 1L
@@ -41,6 +51,7 @@ class ChatController(
                 draft = "",
                 isSending = true,
                 error = null,
+                connectionStatus = WorkBuddyConnectionStatus.SENDING,
             ),
         )
         requestAssistant(question)
@@ -62,45 +73,92 @@ class ChatController(
                 messages = state.messages.filterIndexed { index, _ -> index != failedIndex },
                 isSending = true,
                 error = null,
+                connectionStatus = WorkBuddyConnectionStatus.SENDING,
             ),
         )
         requestAssistant(question)
     }
 
     private fun requestAssistant(question: String) {
-        runCatching { chatRepository.ask(question) }
-            .onSuccess { rawContent ->
-                val assistantMessage = ChatMessage(
-                    id = newMessageId(),
+        val assistantMessageId = newMessageId()
+        updateState(
+            state.copy(
+                messages = state.messages + ChatMessage(
+                    id = assistantMessageId,
                     role = ChatRole.ASSISTANT,
-                    blocks = buildChatContentBlocks(parseStockAiMetadata(rawContent)),
-                    status = ChatMessageStatus.COMPLETE,
-                )
-                updateState(
-                    state.copy(
-                        messages = state.messages + assistantMessage,
-                        isSending = false,
-                        error = null,
-                    ),
+                    blocks = emptyList(),
+                    status = ChatMessageStatus.GENERATING,
+                ),
+            ),
+        )
+
+        if (!chatRepository.isConfigured) {
+            completeWithFailure(assistantMessageId, question, UNCONFIGURED_MESSAGE)
+            return
+        }
+
+        val request = runCatching {
+            ChatRequest(
+                question = question,
+                conversationId = state.conversationId,
+                context = contextProvider(),
+            )
+        }.getOrElse { error ->
+            completeWithFailure(assistantMessageId, question, error.readableMessage())
+            return
+        }
+        runCatching {
+            chatRepository.ask(request) { result ->
+                result.fold(
+                    onSuccess = { response ->
+                        val assistantMessage = ChatMessage(
+                            id = assistantMessageId,
+                            role = ChatRole.ASSISTANT,
+                            blocks = buildChatContentBlocks(
+                                ParsedStockAiContent(
+                                    markdown = response.answer,
+                                    symbols = response.symbols,
+                                    showTrend = response.showTrend,
+                                ),
+                            ),
+                            status = ChatMessageStatus.COMPLETE,
+                        )
+                        updateState(
+                            state.copy(
+                                messages = state.messages.replaceMessage(assistantMessage),
+                                isSending = false,
+                                error = null,
+                                conversationId = response.conversationId ?: state.conversationId,
+                                connectionStatus = WorkBuddyConnectionStatus.AVAILABLE,
+                            ),
+                        )
+                    },
+                    onFailure = { error ->
+                        completeWithFailure(assistantMessageId, question, error.readableMessage())
+                    },
                 )
             }
-            .onFailure { error ->
-                val message = error.readableMessage()
-                val failedAssistant = ChatMessage(
-                    id = newMessageId(),
-                    role = ChatRole.ASSISTANT,
-                    blocks = listOf(ChatContentBlock.Markdown(message)),
-                    status = ChatMessageStatus.FAILED,
-                    retryQuestion = question,
-                )
-                updateState(
-                    state.copy(
-                        messages = state.messages + failedAssistant,
-                        isSending = false,
-                        error = message,
-                    ),
-                )
-            }
+        }.onFailure { error ->
+            completeWithFailure(assistantMessageId, question, error.readableMessage())
+        }
+    }
+
+    private fun completeWithFailure(assistantMessageId: String, question: String, message: String) {
+        val failedAssistant = ChatMessage(
+            id = assistantMessageId,
+            role = ChatRole.ASSISTANT,
+            blocks = listOf(ChatContentBlock.Markdown(message)),
+            status = ChatMessageStatus.FAILED,
+            retryQuestion = question,
+        )
+        updateState(
+            state.copy(
+                messages = state.messages.replaceMessage(failedAssistant),
+                isSending = false,
+                error = message,
+                connectionStatus = WorkBuddyConnectionStatus.ERROR,
+            ),
+        )
     }
 
     private fun newMessageId(): String = "message-${nextMessageId++}"
@@ -110,3 +168,8 @@ class ChatController(
         onStateChanged(newState)
     }
 }
+
+private fun List<ChatMessage>.replaceMessage(replacement: ChatMessage): List<ChatMessage> =
+    map { message -> if (message.id == replacement.id) replacement else message }
+
+private const val UNCONFIGURED_MESSAGE = "WorkBuddy 服务尚未配置，请先配置 HTTPS 代理地址"
