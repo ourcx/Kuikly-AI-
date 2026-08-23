@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Keep aligned with DesignTokens.ColorValues.BACKGROUND. -->
+    <color name="app_background">#08111F</color>
+</resources>

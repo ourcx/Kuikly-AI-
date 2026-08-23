@@ -1,0 +1,15 @@
+.gradle/
+build/
+**/build/
+local.properties
+*.iml
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.tmp
+captures/
+.externalNativeBuild/
+.cxx/
+flux/.local/
+flux/changes/20260823-115259_repository-fixtures/
