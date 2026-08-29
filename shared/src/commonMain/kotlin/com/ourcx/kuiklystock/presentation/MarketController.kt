@@ -154,6 +154,7 @@ class MarketController(
             )
         }.fold(
             onSuccess = { content ->
+                recordRecentQuote(content.quote)
                 StockDetailState(
                     symbol = content.quote.symbol,
                     content = LoadState.Content(content),
@@ -206,6 +207,15 @@ class MarketController(
         state = newState
         onStateChanged(newState)
     }
+
+    private fun recordRecentQuote(quote: StockQuote) {
+        val normalizedSymbol = normalizeSymbol(quote.symbol)
+        val recentQuotes = buildList {
+            add(quote)
+            addAll(state.recentQuotes.filterNot { normalizeSymbol(it.symbol) == normalizedSymbol })
+        }.take(MAX_RECENT_QUOTES)
+        updateState(state.copy(recentQuotes = recentQuotes))
+    }
 }
 
 internal fun Throwable.readableMessage(): String = when (this) {
@@ -216,6 +226,7 @@ internal fun Throwable.readableMessage(): String = when (this) {
 private const val DEMO_ERROR_MESSAGE = "行情加载失败，请重试"
 private const val EMPTY_SYMBOL_MESSAGE = "股票代码不能为空"
 private const val DEFAULT_ERROR_MESSAGE = "服务暂时不可用，请重试"
+private const val MAX_RECENT_QUOTES = 3
 
 private enum class MarketSourceStatus {
     CONTENT,
@@ -255,7 +266,11 @@ private fun MarketSort.applyTo(quotes: List<StockQuote>): List<StockQuote> = whe
     MarketSort.DEFAULT -> quotes
     MarketSort.GAINERS -> quotes.sortedByDescending(StockQuote::changePercent)
     MarketSort.LOSERS -> quotes.sortedBy(StockQuote::changePercent)
+    MarketSort.VOLATILITY -> quotes.sortedByDescending(StockQuote::intradayAmplitudePercent)
 }
+
+private val StockQuote.intradayAmplitudePercent: Double
+    get() = if (previousClose == 0.0) 0.0 else (high - low) / previousClose * 100.0
 
 private fun String.matchesAnyOf(vararg exchanges: String): Boolean {
     val normalizedExchange = normalizeExchange(this)

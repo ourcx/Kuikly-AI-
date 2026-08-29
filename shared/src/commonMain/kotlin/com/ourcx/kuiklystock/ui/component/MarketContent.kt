@@ -49,19 +49,16 @@ fun ViewContainer<*, *>.marketContentSlot(
         )
         when (val quotes = state.quotes) {
             LoadState.Loading -> marketStatusPanel(
-                eyebrow = "LIVE MARKET",
                 title = "正在加载行情",
-                description = "正在获取最新市场数据，请稍候…",
+                description = "正在获取最新市场数据",
             )
             LoadState.Empty -> marketStatusPanel(
-                eyebrow = "DISCOVERY EMPTY",
                 title = "没有找到匹配的行情",
                 description = state.emptyDiscoveryDescription(),
                 action = if (state.hasDiscoveryFiltersApplied()) "清除筛选" else null,
                 onAction = if (state.hasDiscoveryFiltersApplied()) onClearDiscoveryFilters else null,
             )
             is LoadState.Error -> marketStatusPanel(
-                eyebrow = "CONNECTION LOST",
                 title = "行情加载失败",
                 description = quotes.message,
                 action = "重新加载",
@@ -70,6 +67,7 @@ fun ViewContainer<*, *>.marketContentSlot(
             is LoadState.Content -> marketQuoteGallery(
                 quotes = quotes.value,
                 favoriteSymbols = state.favoriteSymbols,
+                recentQuotes = state.recentQuotes,
                 onSelectStock = onSelectStock,
                 onToggleFavorite = onToggleFavorite,
                 onAskAi = onAskAi,
@@ -86,18 +84,10 @@ private fun ViewContainer<*, *>.marketHeader() {
         }
         Text {
             attr {
-                text("市场灵感库")
+                text("行情")
                 fontSize(DesignTokens.Typography.H2)
                 fontWeightBold()
                 color(DesignTokens.Colors.onSurface)
-            }
-        }
-        Text {
-            attr {
-                text("捕捉全球市场脉搏，发现值得关注的价格作品")
-                fontSize(DesignTokens.Typography.BODY)
-                color(DesignTokens.Colors.onSurfaceMuted)
-                marginTop(DesignTokens.Spacing.XS)
             }
         }
     }
@@ -123,17 +113,22 @@ private fun ViewContainer<*, *>.marketDiscoveryToolbar(
             query = state.query,
             onUpdateQuery = onUpdateQuery,
         )
-        marketChipRow {
-            marketFilterChip("全部", state.filter == MarketFilter.ALL) {
+        View {
+            attr {
+                flexDirectionRow()
+                alignItemsCenter()
+                marginTop(DesignTokens.Spacing.SM)
+            }
+            marketFilterTab("全部", state.filter == MarketFilter.ALL) {
                 onSelectFilter(MarketFilter.ALL)
             }
-            marketFilterChip("港股", state.filter == MarketFilter.HK) {
+            marketFilterTab("港股", state.filter == MarketFilter.HK) {
                 onSelectFilter(MarketFilter.HK)
             }
-            marketFilterChip("A股", state.filter == MarketFilter.CN) {
+            marketFilterTab("A股", state.filter == MarketFilter.CN) {
                 onSelectFilter(MarketFilter.CN)
             }
-            marketFilterChip("美股", state.filter == MarketFilter.US) {
+            marketFilterTab("美股", state.filter == MarketFilter.US) {
                 onSelectFilter(MarketFilter.US)
             }
         }
@@ -143,27 +138,26 @@ private fun ViewContainer<*, *>.marketDiscoveryToolbar(
                 alignItemsCenter()
                 marginTop(DesignTokens.Spacing.SM)
             }
-            marketCompactChip("默认", state.sort == MarketSort.DEFAULT) {
+            marketSortAction("默认", state.sort == MarketSort.DEFAULT) {
                 onSelectSort(MarketSort.DEFAULT)
             }
-            marketCompactChip("涨幅", state.sort == MarketSort.GAINERS) {
+            marketSortAction("涨幅", state.sort == MarketSort.GAINERS) {
                 onSelectSort(MarketSort.GAINERS)
             }
-            marketCompactChip("跌幅", state.sort == MarketSort.LOSERS) {
+            marketSortAction("跌幅", state.sort == MarketSort.LOSERS) {
                 onSelectSort(MarketSort.LOSERS)
             }
-            marketCompactChip("仅看自选", state.favoritesOnly, onToggleFavoritesOnly)
-        }
-        View {
-            attr {
-                marginTop(DesignTokens.Spacing.SM)
+            marketSortAction("异动", state.sort == MarketSort.VOLATILITY) {
+                onSelectSort(MarketSort.VOLATILITY)
             }
+            View { attr { flex(DesignTokens.Size.FILL) } }
             Text {
                 attr {
-                    text("共 ${state.totalCount} 个结果")
+                    text(if (state.favoritesOnly) "全部行情" else "仅看自选")
                     fontSize(DesignTokens.Typography.CAPTION)
-                    color(DesignTokens.Colors.onSurfaceMuted)
+                    color(if (state.favoritesOnly) DesignTokens.Colors.accentTertiary else DesignTokens.Colors.onSurfaceMuted)
                 }
+                event { click { onToggleFavoritesOnly() } }
             }
         }
     }
@@ -206,35 +200,21 @@ private fun ViewContainer<*, *>.marketSearchField(
     }
 }
 
-private fun ViewContainer<*, *>.marketChipRow(
-    content: ViewContainer<*, *>.() -> Unit,
-) {
-    View {
-        attr {
-            flexDirectionRow()
-            marginTop(DesignTokens.Spacing.SM)
-        }
-        content()
-    }
-}
-
-private fun ViewContainer<*, *>.marketFilterChip(
+private fun ViewContainer<*, *>.marketFilterTab(
     label: String,
     selected: Boolean,
     onClick: () -> Unit,
 ) {
     View {
         attr {
-            borderRadius(DesignTokens.Radius.FULL)
+            flex(DesignTokens.Size.FILL)
+            alignItemsCenter()
             padding(
                 top = DesignTokens.Spacing.XS,
                 bottom = DesignTokens.Spacing.XS,
-                left = DesignTokens.Spacing.SM,
-                right = DesignTokens.Spacing.SM,
             )
-            marginRight(DesignTokens.Spacing.XS)
             backgroundColor(
-                if (selected) DesignTokens.Colors.accentPrimary else DesignTokens.Colors.surfaceElevated,
+                if (selected) DesignTokens.Colors.surfaceElevated else DesignTokens.Colors.surfaceAlt,
             )
         }
         event { click { onClick() } }
@@ -243,44 +223,29 @@ private fun ViewContainer<*, *>.marketFilterChip(
                 text(label)
                 fontSize(DesignTokens.Typography.CAPTION)
                 fontWeightBold()
-                color(if (selected) DesignTokens.Colors.onPrimary else DesignTokens.Colors.onSurfaceMuted)
+                color(if (selected) DesignTokens.Colors.onSurface else DesignTokens.Colors.onSurfaceMuted)
             }
         }
     }
 }
 
-private fun ViewContainer<*, *>.marketCompactChip(
+private fun ViewContainer<*, *>.marketSortAction(
     label: String,
     selected: Boolean,
     onClick: () -> Unit,
 ) {
     View {
         attr {
-            borderRadius(DesignTokens.Radius.FULL)
-            padding(
-                top = DesignTokens.Spacing.XS,
-                bottom = DesignTokens.Spacing.XS,
-                left = DesignTokens.Spacing.SM,
-                right = DesignTokens.Spacing.SM,
-            )
-            marginRight(DesignTokens.Spacing.XS)
-            backgroundColor(
-                if (selected) DesignTokens.Colors.accentTertiary else DesignTokens.Colors.surfaceElevated,
-            )
+            padding(top = DesignTokens.Spacing.XS, bottom = DesignTokens.Spacing.XS)
+            marginRight(DesignTokens.Spacing.MD)
         }
         event { click { onClick() } }
         Text {
             attr {
                 text(label)
                 fontSize(DesignTokens.Typography.CAPTION)
-                fontWeightBold()
-                color(
-                    if (selected) {
-                        DesignTokens.Colors.onSecondary
-                    } else {
-                        DesignTokens.Colors.onSurfaceMuted
-                    },
-                )
+                if (selected) fontWeightBold()
+                color(if (selected) DesignTokens.Colors.accentTertiary else DesignTokens.Colors.onSurfaceMuted)
             }
         }
     }
@@ -289,6 +254,7 @@ private fun ViewContainer<*, *>.marketCompactChip(
 private fun ViewContainer<*, *>.marketQuoteGallery(
     quotes: kotlin.collections.List<StockQuote>,
     favoriteSymbols: Set<String>,
+    recentQuotes: kotlin.collections.List<StockQuote>,
     onSelectStock: (String) -> Unit,
     onToggleFavorite: (String) -> Unit,
     onAskAi: (String) -> Unit,
@@ -302,6 +268,9 @@ private fun ViewContainer<*, *>.marketQuoteGallery(
             padding(left = DesignTokens.Size.PAGE_GUTTER, right = DesignTokens.Size.PAGE_GUTTER)
         }
         marketOverview(quotes)
+        if (recentQuotes.isNotEmpty()) {
+            recentQuotes(recentQuotes, onSelectStock)
+        }
         vfor({ observableQuotes }) { quote ->
             marketQuoteCard(
                 quote = quote,
@@ -321,32 +290,23 @@ private fun ViewContainer<*, *>.marketOverview(quotes: kotlin.collections.List<S
         attr {
             flexDirectionRow()
             alignItemsCenter()
-            padding(DesignTokens.Spacing.MD)
+            padding(top = DesignTokens.Spacing.SM, bottom = DesignTokens.Spacing.SM)
             marginBottom(DesignTokens.Spacing.SM)
-            borderRadius(DesignTokens.Radius.LG)
-            backgroundColor(DesignTokens.Colors.surfaceElevated)
+            backgroundColor(DesignTokens.Colors.surfaceAlt)
         }
         View {
             attr { flex(DesignTokens.Size.FILL) }
             Text {
                 attr {
-                    text("今日观察")
-                    fontSize(DesignTokens.Typography.H4)
+                    text("${quotes.size} 个标的")
+                    fontSize(DesignTokens.Typography.BODY)
                     fontWeightBold()
                     color(DesignTokens.Colors.onSurface)
                 }
             }
-            Text {
-                attr {
-                    text("${quotes.size} 个标的正在更新")
-                    fontSize(DesignTokens.Typography.CAPTION)
-                    color(DesignTokens.Colors.onSurfaceMuted)
-                    marginTop(DesignTokens.Spacing.XXS)
-                }
-            }
         }
-        marketOverviewMetric("↑ 上涨", risingCount.toString(), DesignTokens.Colors.accentPrimary)
-        marketOverviewMetric("↓ 下跌", fallingCount.toString(), DesignTokens.Colors.accentTertiary)
+        marketOverviewMetric("上涨", risingCount.toString(), DesignTokens.Colors.accentPrimary)
+        marketOverviewMetric("下跌", fallingCount.toString(), DesignTokens.Colors.success)
     }
 }
 
@@ -359,7 +319,7 @@ private fun ViewContainer<*, *>.marketOverviewMetric(label: String, value: Strin
         Text {
             attr {
                 text(value)
-                fontSize(DesignTokens.Typography.H3)
+                fontSize(DesignTokens.Typography.BODY_LARGE)
                 fontWeightBold()
                 color(color)
             }
@@ -370,6 +330,55 @@ private fun ViewContainer<*, *>.marketOverviewMetric(label: String, value: Strin
                 fontSize(DesignTokens.Typography.CAPTION)
                 color(DesignTokens.Colors.onSurfaceMuted)
                 marginTop(DesignTokens.Spacing.XXS)
+            }
+        }
+    }
+}
+
+private fun ViewContainer<*, *>.recentQuotes(
+    quotes: kotlin.collections.List<StockQuote>,
+    onSelectStock: (String) -> Unit,
+) {
+    View {
+        attr {
+            padding(DesignTokens.Spacing.MD)
+            marginBottom(DesignTokens.Spacing.SM)
+            borderRadius(DesignTokens.Radius.LG)
+            backgroundColor(DesignTokens.Colors.surfaceElevated)
+        }
+        Text {
+            attr {
+                text("最近浏览")
+                fontSize(DesignTokens.Typography.CAPTION)
+                color(DesignTokens.Colors.onSurfaceMuted)
+            }
+        }
+        View {
+            attr {
+                flexDirectionRow()
+                marginTop(DesignTokens.Spacing.SM)
+            }
+            quotes.forEach { quote ->
+                View {
+                    attr { flex(DesignTokens.Size.FILL) }
+                    event { click { onSelectStock(quote.symbol) } }
+                    Text {
+                        attr {
+                            text(quote.symbol)
+                            fontSize(DesignTokens.Typography.BODY)
+                            fontWeightBold()
+                            color(DesignTokens.Colors.onSurface)
+                        }
+                    }
+                    Text {
+                        attr {
+                            text(formatStockChangePercent(quote.changePercent))
+                            fontSize(DesignTokens.Typography.CAPTION)
+                            color(quote.trendColor())
+                            marginTop(DesignTokens.Spacing.XXS)
+                        }
+                    }
+                }
             }
         }
     }
@@ -398,15 +407,6 @@ private fun ViewContainer<*, *>.marketQuoteCard(
             }
             event { click { onSelectStock(quote.symbol) } }
             View {
-                attr {
-                    width(DesignTokens.Spacing.XXS)
-                    height(DesignTokens.Spacing.XL)
-                    borderRadius(DesignTokens.Radius.FULL)
-                    backgroundColor(trendColor)
-                    marginRight(DesignTokens.Spacing.SM)
-                }
-            }
-            View {
                 attr { flex(DesignTokens.Size.FILL) }
                 Text {
                     attr {
@@ -427,7 +427,6 @@ private fun ViewContainer<*, *>.marketQuoteCard(
             }
             View {
                 attr {
-                    width(DesignTokens.Size.MARKET_PRICE_COLUMN)
                     alignItemsFlexEnd()
                 }
                 Text {
@@ -451,62 +450,41 @@ private fun ViewContainer<*, *>.marketQuoteCard(
         }
         View {
             attr {
-                height(DesignTokens.Size.HAIRLINE)
-                marginTop(DesignTokens.Spacing.SM)
-                backgroundColor(DesignTokens.Colors.borderSubtle)
-            }
-        }
-        View {
-            attr {
                 flexDirectionRow()
                 marginTop(DesignTokens.Spacing.SM)
+                alignItemsCenter()
             }
-            marketCardAction(
-                label = if (isFavorite) "★ 已自选" else "☆ 加自选",
-                selected = isFavorite,
-                onClick = { onToggleFavorite(quote.symbol) },
-            )
-            marketCardAction(
-                label = "✦ 一键问 AI",
-                selected = true,
-                onClick = { onAskAi(quote.symbol) },
-            )
-        }
-    }
-}
-
-private fun ViewContainer<*, *>.marketCardAction(
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    View {
-        attr {
-            flex(DesignTokens.Size.FILL)
-            height(DesignTokens.Size.MARKET_ACTION_HEIGHT)
-            allCenter()
-            borderRadius(DesignTokens.Radius.MD)
-            marginRight(DesignTokens.Spacing.XS)
-            backgroundColor(
-                if (selected) DesignTokens.Colors.primarySoft else DesignTokens.Colors.surfaceAlt,
-            )
-        }
-        event { click { onClick() } }
-        Text {
-            attr {
-                text(label)
-                fontSize(DesignTokens.Typography.CAPTION)
-                fontWeightBold()
-                color(
-                    if (selected) DesignTokens.Colors.accentTertiary else DesignTokens.Colors.onSurfaceMuted,
-                )
+            Text {
+                attr {
+                    flex(DesignTokens.Size.FILL)
+                    text("今开 ${formatStockPrice(quote.open)}  ·  高 ${formatStockPrice(quote.high)}  ·  低 ${formatStockPrice(quote.low)}")
+                    fontSize(DesignTokens.Typography.CAPTION)
+                    color(DesignTokens.Colors.onSurfaceMuted)
+                }
+            }
+            Text {
+                attr {
+                    text(if (isFavorite) "已自选" else "加自选")
+                    fontSize(DesignTokens.Typography.CAPTION)
+                    color(if (isFavorite) DesignTokens.Colors.accentPrimary else DesignTokens.Colors.onSurfaceMuted)
+                    marginLeft(DesignTokens.Spacing.SM)
+                }
+                event { click { onToggleFavorite(quote.symbol) } }
+            }
+            Text {
+                attr {
+                    text("问 AI")
+                    fontSize(DesignTokens.Typography.CAPTION)
+                    color(DesignTokens.Colors.accentTertiary)
+                    marginLeft(DesignTokens.Spacing.MD)
+                }
+                event { click { onAskAi(quote.symbol) } }
             }
         }
     }
 }
 
 private fun ViewContainer<*, *>.marketStatusPanel(
-    eyebrow: String,
     title: String,
     description: String,
     action: String? = null,
@@ -520,19 +498,10 @@ private fun ViewContainer<*, *>.marketStatusPanel(
         }
         Text {
             attr {
-                text(eyebrow)
-                fontSize(DesignTokens.Typography.CAPTION)
-                fontWeightBold()
-                color(DesignTokens.Colors.accentTertiary)
-            }
-        }
-        Text {
-            attr {
                 text(title)
                 fontSize(DesignTokens.Typography.H3)
                 fontWeightBold()
                 color(DesignTokens.Colors.onSurface)
-                marginTop(DesignTokens.Spacing.XS)
             }
         }
         Text {
@@ -546,7 +515,7 @@ private fun ViewContainer<*, *>.marketStatusPanel(
         if (action != null && onAction != null) {
             View {
                 attr {
-                    borderRadius(DesignTokens.Radius.FULL)
+                    borderRadius(DesignTokens.Radius.MD)
                     padding(
                         top = DesignTokens.Spacing.XS,
                         bottom = DesignTokens.Spacing.XS,

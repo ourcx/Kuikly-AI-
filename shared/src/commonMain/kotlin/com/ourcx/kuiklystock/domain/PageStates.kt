@@ -16,6 +16,7 @@ enum class MarketSort {
     DEFAULT,
     GAINERS,
     LOSERS,
+    VOLATILITY,
 }
 
 sealed interface AppDestination {
@@ -33,6 +34,7 @@ data class MarketState(
     val filter: MarketFilter = MarketFilter.ALL,
     val sort: MarketSort = MarketSort.DEFAULT,
     val favoriteSymbols: Set<String> = emptySet(),
+    val recentQuotes: List<StockQuote> = emptyList(),
     val favoritesOnly: Boolean = false,
     val totalCount: Int = 0,
 )

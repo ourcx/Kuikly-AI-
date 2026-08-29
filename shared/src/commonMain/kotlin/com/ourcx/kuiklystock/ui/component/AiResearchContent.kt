@@ -78,18 +78,18 @@ private fun ViewContainer<*, *>.chatHeader(
                 attr { flex(DesignTokens.Size.FILL) }
                 Text {
                     attr {
-                        text("WorkBuddy AI 投研")
+                        text("AI 投研")
                         fontSize(DesignTokens.Typography.H3)
                         fontWeightBold()
                         color(DesignTokens.Colors.onSurface)
                     }
                 }
             }
-            connectionBadge(status)
+            connectionStatus(status)
         }
         Text {
             attr {
-                text("让行情、趋势与 AI 观点在一次对话中汇合")
+                text(provider.description())
                 fontSize(DesignTokens.Typography.CAPTION)
                 color(DesignTokens.Colors.onSurfaceMuted)
                 marginTop(DesignTokens.Spacing.XXS)
@@ -101,7 +101,6 @@ private fun ViewContainer<*, *>.chatHeader(
                 alignItemsCenter()
                 marginTop(DesignTokens.Spacing.SM)
             }
-            providerBadge(provider)
             if (canClear) {
                 View {
                     attr {
@@ -112,8 +111,7 @@ private fun ViewContainer<*, *>.chatHeader(
                             left = DesignTokens.Spacing.SM,
                             right = DesignTokens.Spacing.SM,
                         )
-                        borderRadius(DesignTokens.Radius.FULL)
-                        backgroundColor(DesignTokens.Colors.surfaceElevated)
+                        borderRadius(DesignTokens.Radius.MD)
                     }
                     event { click { onClear() } }
                     Text {
@@ -129,36 +127,12 @@ private fun ViewContainer<*, *>.chatHeader(
     }
 }
 
-private fun ViewContainer<*, *>.providerBadge(provider: ChatProvider) {
-    val isLocal = provider == ChatProvider.LOCAL
-    View {
-        attr {
-            padding(
-                top = DesignTokens.Spacing.XXS,
-                bottom = DesignTokens.Spacing.XXS,
-                left = DesignTokens.Spacing.SM,
-                right = DesignTokens.Spacing.SM,
-            )
-            borderRadius(DesignTokens.Radius.FULL)
-            backgroundColor(if (isLocal) DesignTokens.Colors.primarySoft else DesignTokens.Colors.surfaceElevated)
-        }
-        Text {
-            attr {
-                text(if (isLocal) "本地分析 · 始终可用" else "WorkBuddy · 在线分析")
-                fontSize(DesignTokens.Typography.CAPTION)
-                fontWeightBold()
-                color(if (isLocal) DesignTokens.Colors.accentTertiary else DesignTokens.Colors.accentPrimary)
-            }
-        }
-    }
-}
-
-private fun ViewContainer<*, *>.connectionBadge(status: WorkBuddyConnectionStatus) {
+private fun ViewContainer<*, *>.connectionStatus(status: WorkBuddyConnectionStatus) {
     val label = when (status) {
-        WorkBuddyConnectionStatus.UNCONFIGURED -> "○ 未配置"
-        WorkBuddyConnectionStatus.AVAILABLE -> "● 已配置"
-        WorkBuddyConnectionStatus.SENDING -> "● 响应中"
-        WorkBuddyConnectionStatus.ERROR -> "! 连接异常"
+        WorkBuddyConnectionStatus.UNCONFIGURED -> "本地可用"
+        WorkBuddyConnectionStatus.AVAILABLE -> "WorkBuddy 在线"
+        WorkBuddyConnectionStatus.SENDING -> "分析中"
+        WorkBuddyConnectionStatus.ERROR -> "已切换本地"
     }
     val color = when (status) {
         WorkBuddyConnectionStatus.UNCONFIGURED -> DesignTokens.Colors.onSurfaceMuted
@@ -166,26 +140,19 @@ private fun ViewContainer<*, *>.connectionBadge(status: WorkBuddyConnectionStatu
         WorkBuddyConnectionStatus.SENDING -> DesignTokens.Colors.accentTertiary
         WorkBuddyConnectionStatus.ERROR -> DesignTokens.Colors.danger
     }
-    View {
+    Text {
         attr {
-            padding(
-                top = DesignTokens.Spacing.XXS,
-                bottom = DesignTokens.Spacing.XXS,
-                left = DesignTokens.Spacing.XS,
-                right = DesignTokens.Spacing.XS,
-            )
-            borderRadius(DesignTokens.Radius.FULL)
-            backgroundColor(DesignTokens.Colors.surfaceElevated)
-        }
-        Text {
-            attr {
-                text(label)
-                fontSize(DesignTokens.Typography.CAPTION)
-                fontWeightBold()
-                color(color)
-            }
+            text(label)
+            fontSize(DesignTokens.Typography.CAPTION)
+            color(color)
         }
     }
+}
+
+private fun ChatProvider.description(): String = if (this == ChatProvider.LOCAL) {
+    "基于当前行情的本地分析，无需配置"
+} else {
+    "由 WorkBuddy 结合当前行情生成分析"
 }
 
 private fun ViewContainer<*, *>.chatConversation(
@@ -225,14 +192,12 @@ private fun ViewContainer<*, *>.chatWelcome(
 ) {
     View {
         attr {
-            padding(DesignTokens.Spacing.LG)
-            borderRadius(DesignTokens.Radius.LG)
-            backgroundColor(DesignTokens.Colors.surfaceElevated)
+            padding(top = DesignTokens.Spacing.MD, bottom = DesignTokens.Spacing.MD)
         }
         Text {
             attr {
-                text("今天想研究哪只股票？")
-                fontSize(DesignTokens.Typography.H3)
+                text("开始研究")
+                fontSize(DesignTokens.Typography.H4)
                 fontWeightBold()
                 color(DesignTokens.Colors.onSurface)
             }
@@ -241,34 +206,56 @@ private fun ViewContainer<*, *>.chatWelcome(
             attr {
                 text(
                     if (provider == ChatProvider.LOCAL) {
-                        "无需配置即可使用本地行情分析；连接 WorkBuddy 后会自动优先使用在线能力。"
+                        "输入股票名称或代码。本地分析可提供价格、趋势和风险概览。"
                     } else {
-                        "输入股票名称或代码，WorkBuddy 会结合实时行情生成结构化分析。"
+                        "输入股票名称或代码，WorkBuddy 将结合当前行情生成分析。"
                     },
                 )
-                fontSize(DesignTokens.Typography.BODY_LARGE)
+                fontSize(DesignTokens.Typography.BODY)
                 color(DesignTokens.Colors.onSurfaceMuted)
                 marginTop(DesignTokens.Spacing.XS)
             }
         }
-        suggestionChip("腾讯控股有哪些积极信号？", onQuestion)
-        suggestionChip("AAPL 最近走势与风险如何？", onQuestion)
+        Text {
+            attr {
+                text("常用任务")
+                fontSize(DesignTokens.Typography.CAPTION)
+                color(DesignTokens.Colors.onSurfaceMuted)
+                marginTop(DesignTokens.Spacing.LG)
+            }
+        }
+        researchTask("腾讯控股：趋势与关键价位", "请分析腾讯控股当前趋势、支撑位、压力位和需要关注的风险。", onQuestion)
+        researchTask("AAPL：日内异动原因", "请分析 AAPL 当前日内波动、可能的驱动因素和后续观察信号。", onQuestion)
+        researchTask("自选股：风险检查", "请根据当前行情梳理自选股中波动较大、下行风险较高的标的。", onQuestion)
     }
 }
 
-private fun ViewContainer<*, *>.suggestionChip(question: String, onQuestion: (String) -> Unit) {
+private fun ViewContainer<*, *>.researchTask(
+    label: String,
+    question: String,
+    onQuestion: (String) -> Unit,
+) {
     View {
         attr {
-            padding(DesignTokens.Spacing.SM)
-            borderRadius(DesignTokens.Radius.LG)
-            backgroundColor(DesignTokens.Colors.primarySoft)
+            flexDirectionRow()
+            alignItemsCenter()
+            padding(top = DesignTokens.Spacing.SM, bottom = DesignTokens.Spacing.SM)
             marginTop(DesignTokens.Spacing.SM)
+            backgroundColor(DesignTokens.Colors.surfaceBase)
         }
         event { click { onQuestion(question) } }
         Text {
             attr {
-                text(question)
+                flex(DesignTokens.Size.FILL)
+                text(label)
                 fontSize(DesignTokens.Typography.BODY)
+                color(DesignTokens.Colors.onSurface)
+            }
+        }
+        Text {
+            attr {
+                text("查看")
+                fontSize(DesignTokens.Typography.CAPTION)
                 color(DesignTokens.Colors.accentTertiary)
             }
         }
@@ -294,10 +281,9 @@ private fun ViewContainer<*, *>.chatMessage(
         }
         Text {
             attr {
-                text(if (isUser) "YOU / 你" else "AI / 智能分析")
+                text(if (isUser) "你的问题" else "分析结果")
                 fontSize(DesignTokens.Typography.CAPTION)
-                fontWeightBold()
-                color(if (isUser) DesignTokens.Colors.accentTertiary else DesignTokens.Colors.accentPrimary)
+                color(DesignTokens.Colors.onSurfaceMuted)
                 marginBottom(DesignTokens.Spacing.XS)
             }
         }
@@ -346,7 +332,7 @@ private fun ViewContainer<*, *>.chatGeneratingBubble() {
             borderRadius(DesignTokens.Radius.LG)
             backgroundColor(DesignTokens.Colors.surfaceElevated)
         }
-        chatStatusLabel("✦ 正在生成分析，连接异常时将自动切换本地…", failed = false)
+        chatStatusLabel("正在生成分析，连接异常时将自动切换本地", failed = false)
     }
 }
 
@@ -369,7 +355,7 @@ private fun ViewContainer<*, *>.chatRetryAction(onRetry: () -> Unit) {
             marginTop(DesignTokens.Spacing.SM)
         }
         event { click { onRetry() } }
-        chatStatusLabel("! 生成失败 · 点击重新连接并重试", failed = true)
+        chatStatusLabel("生成失败，点击重新连接并重试", failed = true)
     }
 }
 

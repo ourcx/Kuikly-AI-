@@ -95,6 +95,11 @@ class MarketControllerTest {
         val losers = controller.contentChangePercents()
         assertEquals(losers.sorted(), losers)
         assertEquals(2, controller.state.totalCount)
+
+        controller.selectFilter(MarketFilter.ALL)
+        controller.selectSort(MarketSort.VOLATILITY)
+        val amplitudes = controller.contentAmplitudes()
+        assertEquals(amplitudes.sortedDescending(), amplitudes)
     }
 
     @Test
@@ -160,6 +165,24 @@ class MarketControllerTest {
         assertEquals("股票代码不能为空", assertIs<LoadState.Error>(controller.selectStock("  " ).content).message)
         assertEquals("未找到股票：MISS", assertIs<LoadState.Error>(controller.selectStock("MISS").content).message)
     }
+
+    @Test
+    fun successfulSelectionsKeepThreeUniqueRecentQuotes() {
+        val controller = MarketController(InMemoryStockRepository())
+
+        controller.selectStock("AAPL")
+        controller.selectStock("00700")
+        controller.selectStock("600519")
+        controller.selectStock("AAPL")
+        controller.selectStock("TSLA")
+
+        assertEquals(listOf("TSLA", "AAPL", "600519"), controller.state.recentQuotes.map(StockQuote::symbol))
+        controller.selectStock("UNKNOWN")
+        assertEquals(listOf("TSLA", "AAPL", "600519"), controller.state.recentQuotes.map(StockQuote::symbol))
+
+        controller.clearDiscoveryFilters()
+        assertEquals(3, controller.state.recentQuotes.size)
+    }
 }
 
 private fun MarketController.contentSymbols(): List<String> =
@@ -167,6 +190,11 @@ private fun MarketController.contentSymbols(): List<String> =
 
 private fun MarketController.contentChangePercents(): List<Double> =
     assertIs<LoadState.Content<List<StockQuote>>>(state.quotes).value.map(StockQuote::changePercent)
+
+private fun MarketController.contentAmplitudes(): List<Double> =
+    assertIs<LoadState.Content<List<StockQuote>>>(state.quotes).value.map { quote ->
+        if (quote.previousClose == 0.0) 0.0 else (quote.high - quote.low) / quote.previousClose * 100.0
+    }
 
 private class FakeStockRepository(
     private val quotes: List<StockQuote> = listOf(QUOTE),
