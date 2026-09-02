@@ -3,6 +3,7 @@ package com.ourcx.kuiklystock.presentation
 import com.ourcx.kuiklystock.data.ChatRepository
 import com.ourcx.kuiklystock.data.InMemoryChatRepository
 import com.ourcx.kuiklystock.data.ResilientChatRepository
+import com.ourcx.kuiklystock.data.ResearchServiceConfiguration
 import com.ourcx.kuiklystock.data.WorkBuddyChatRepository
 import com.ourcx.kuiklystock.domain.ChatContext
 import com.ourcx.kuiklystock.domain.ChatContentBlock
@@ -20,6 +21,7 @@ class ChatController(
     private val chatRepository: ChatRepository = InMemoryChatRepository(),
     private val onStateChanged: (ChatState) -> Unit = {},
     private val contextProvider: () -> ChatContext = { ChatContext() },
+    private val serviceConfiguration: ResearchServiceConfiguration? = null,
 ) {
     var state: ChatState = initialState()
         private set
@@ -87,6 +89,62 @@ class ChatController(
         updateState(initialState())
     }
 
+    fun toggleServiceSettings() {
+        if (state.isSending) return
+        val visible = !state.serviceSettingsVisible
+        updateState(
+            state.copy(
+                serviceSettingsVisible = visible,
+                serviceUrlDraft = if (visible) serviceConfiguration?.currentUrl().orEmpty() else "",
+                serviceSettingsError = null,
+            ),
+        )
+    }
+
+    fun updateServiceUrl(url: String) {
+        updateState(state.copy(serviceUrlDraft = url, serviceSettingsError = null))
+    }
+
+    fun saveServiceUrl() {
+        val configuration = serviceConfiguration ?: return
+        val url = state.serviceUrlDraft.trim()
+        configuration.save(url).fold(
+            onSuccess = {
+                updateState(
+                    state.copy(
+                        serviceSettingsVisible = false,
+                        serviceUrlDraft = "",
+                        serviceSettingsError = null,
+                        connectionStatus = WorkBuddyConnectionStatus.AVAILABLE,
+                    ),
+                )
+            },
+            onFailure = { error ->
+                updateState(state.copy(serviceSettingsError = error.readableMessage()))
+            },
+        )
+    }
+
+    fun clearServiceUrl() {
+        val configuration = serviceConfiguration ?: return
+        configuration.clear()
+        val remainsConfigured = configuration.isConfigured
+        updateState(
+            state.copy(
+                serviceSettingsVisible = false,
+                serviceUrlDraft = "",
+                serviceSettingsError = null,
+                connectionStatus = if (remainsConfigured) {
+                    WorkBuddyConnectionStatus.AVAILABLE
+                } else {
+                    WorkBuddyConnectionStatus.UNCONFIGURED
+                },
+                provider = ChatProvider.LOCAL,
+                conversationId = null,
+            ),
+        )
+    }
+
     private fun requestAssistant(question: String) {
         val assistantMessageId = newMessageId()
         updateState(
@@ -137,11 +195,7 @@ class ChatController(
                                 isSending = false,
                                 error = null,
                                 conversationId = response.conversationId ?: state.conversationId,
-                                connectionStatus = if (response.provider == ChatProvider.WORKBUDDY) {
-                                    WorkBuddyConnectionStatus.AVAILABLE
-                                } else {
-                                    WorkBuddyConnectionStatus.UNCONFIGURED
-                                },
+                                connectionStatus = response.connectionStatus(),
                                 provider = response.provider,
                             ),
                         )
@@ -177,10 +231,11 @@ class ChatController(
     private fun initialState(): ChatState = ChatState(
         connectionStatus = initialConnectionStatus(),
         provider = initialProvider(),
+        serviceUrlDraft = serviceConfiguration?.currentUrl().orEmpty(),
     )
 
     private fun initialConnectionStatus(): WorkBuddyConnectionStatus {
-        val workBuddyConfigured = when (chatRepository) {
+        val workBuddyConfigured = serviceConfiguration?.isConfigured ?: when (chatRepository) {
             is ResilientChatRepository -> chatRepository.isRemoteConfigured
             is InMemoryChatRepository -> false
             else -> chatRepository.isConfigured
@@ -197,6 +252,13 @@ class ChatController(
         is WorkBuddyChatRepository -> ChatProvider.WORKBUDDY
         else -> if (chatRepository.isConfigured) ChatProvider.WORKBUDDY else ChatProvider.LOCAL
     }
+
+    private fun com.ourcx.kuiklystock.domain.ChatResponse.connectionStatus(): WorkBuddyConnectionStatus =
+        when {
+            provider == ChatProvider.WORKBUDDY -> WorkBuddyConnectionStatus.AVAILABLE
+            serviceConfiguration?.isConfigured == true -> WorkBuddyConnectionStatus.ERROR
+            else -> WorkBuddyConnectionStatus.UNCONFIGURED
+        }
 
     private fun newMessageId(): String = "message-${nextMessageId++}"
 

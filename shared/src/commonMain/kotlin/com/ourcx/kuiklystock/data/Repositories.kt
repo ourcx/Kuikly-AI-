@@ -35,6 +35,13 @@ interface ChatRepository {
     fun ask(request: ChatRequest, callback: (Result<ChatResponse>) -> Unit)
 }
 
+interface ResearchServiceConfiguration {
+    val isConfigured: Boolean
+    fun currentUrl(): String
+    fun save(url: String): Result<Unit>
+    fun clear()
+}
+
 class StockNotFoundException(
     val symbol: String,
 ) : IllegalArgumentException("Unknown stock symbol: $symbol")

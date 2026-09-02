@@ -75,6 +75,23 @@ internal class BridgeModule : Module() {
         }
     }
 
+    fun workBuddyProxyUrl(): String =
+        syncCallNativeMethod(GET_WORK_BUDDY_PROXY_URL, null, null)
+
+    fun saveWorkBuddyProxyUrl(url: String): Result<Unit> {
+        val params = JSONObject().put(WORK_BUDDY_PROXY_URL, url)
+        val response = syncCallNativeMethod(SAVE_WORK_BUDDY_PROXY_URL, params, null)
+        return if (response == "true") {
+            Result.success(Unit)
+        } else {
+            Result.failure(IllegalArgumentException(response.ifBlank { INVALID_WORK_BUDDY_PROXY_URL }))
+        }
+    }
+
+    fun clearWorkBuddyProxyUrl() {
+        syncCallNativeMethod(CLEAR_WORK_BUDDY_PROXY_URL, null, null)
+    }
+
     fun requestWorkBuddy(payload: String, callback: (Result<String>) -> Unit) {
         val params = JSONObject().put(WORK_BUDDY_PAYLOAD, payload)
         callNativeMethod(REQUEST_WORK_BUDDY, params) { response ->
@@ -117,13 +134,18 @@ internal class BridgeModule : Module() {
         const val CURRENT_TIMESTAMP = "currentTimestamp"
         const val DATE_FORMATTER = "dateFormatter"
         const val IS_WORK_BUDDY_CONFIGURED = "isWorkBuddyConfigured"
+        const val GET_WORK_BUDDY_PROXY_URL = "getWorkBuddyProxyUrl"
+        const val SAVE_WORK_BUDDY_PROXY_URL = "saveWorkBuddyProxyUrl"
+        const val CLEAR_WORK_BUDDY_PROXY_URL = "clearWorkBuddyProxyUrl"
         const val REQUEST_WORK_BUDDY = "requestWorkBuddy"
 
         private const val WORK_BUDDY_PAYLOAD = "payload"
+        private const val WORK_BUDDY_PROXY_URL = "url"
         private const val WORK_BUDDY_SUCCESS = "success"
         private const val WORK_BUDDY_DATA = "data"
         private const val WORK_BUDDY_ERROR = "error"
         private const val WORK_BUDDY_DEFAULT_ERROR = "WorkBuddy request failed"
         private const val WORK_BUDDY_EMPTY_RESPONSE_ERROR = "WorkBuddy response is empty"
+        private const val INVALID_WORK_BUDDY_PROXY_URL = "请输入有效的 HTTPS 服务地址"
     }
 }

@@ -81,4 +81,24 @@ class WorkBuddyChatRepositoryTest {
         assertTrue(requireNotNull(nativeResult).exceptionOrNull() is WorkBuddyChatException)
         assertTrue(requireNotNull(invalidJsonResult).exceptionOrNull() is WorkBuddyChatException)
     }
+
+    @Test
+    fun configurationIsEvaluatedForEveryRequest() {
+        var configured = false
+        var invocations = 0
+        val repository = WorkBuddyChatRepository(configurationProvider = { configured }) { _, callback ->
+            invocations += 1
+            callback(Result.success("{\"answer\":\"online\"}"))
+        }
+
+        var firstResult: Result<ChatResponse>? = null
+        repository.ask(ChatRequest(question = "first")) { firstResult = it }
+        configured = true
+        var secondResult: Result<ChatResponse>? = null
+        repository.ask(ChatRequest(question = "second")) { secondResult = it }
+
+        assertTrue(requireNotNull(firstResult).isFailure)
+        assertEquals("online", requireNotNull(secondResult).getOrThrow().answer)
+        assertEquals(1, invocations)
+    }
 }

@@ -13,6 +13,7 @@ import com.ourcx.kuiklystock.domain.WorkBuddyConnectionStatus
 import com.ourcx.kuiklystock.theme.DesignTokens
 import com.tencent.kuikly.core.base.ViewContainer
 import com.tencent.kuikly.core.views.List
+import com.tencent.kuikly.core.views.Input
 import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
 import com.tencent.kuiklybase.KuiklyMarkdown
@@ -32,6 +33,10 @@ fun ViewContainer<*, *>.aiResearchContentSlot(
     onSend: () -> Unit,
     onRetry: () -> Unit,
     onClear: () -> Unit,
+    onToggleServiceSettings: () -> Unit,
+    onUpdateServiceUrl: (String) -> Unit,
+    onSaveServiceUrl: () -> Unit,
+    onClearServiceUrl: () -> Unit,
     onSelectStock: (String) -> Unit,
 ) {
     View {
@@ -45,7 +50,16 @@ fun ViewContainer<*, *>.aiResearchContentSlot(
             provider = state.provider,
             canClear = state.messages.isNotEmpty() && !state.isSending,
             onClear = onClear,
+            onToggleServiceSettings = onToggleServiceSettings,
         )
+        if (state.serviceSettingsVisible) {
+            serviceSettings(
+                state = state,
+                onUpdateServiceUrl = onUpdateServiceUrl,
+                onSaveServiceUrl = onSaveServiceUrl,
+                onClearServiceUrl = onClearServiceUrl,
+            )
+        }
         chatConversation(
             state = state,
             marketState = marketState,
@@ -63,6 +77,7 @@ private fun ViewContainer<*, *>.chatHeader(
     provider: ChatProvider,
     canClear: Boolean,
     onClear: () -> Unit,
+    onToggleServiceSettings: () -> Unit,
 ) {
     View {
         attr {
@@ -78,18 +93,25 @@ private fun ViewContainer<*, *>.chatHeader(
                 attr { flex(DesignTokens.Size.FILL) }
                 Text {
                     attr {
-                        text("AI 投研")
+                        text("研究")
                         fontSize(DesignTokens.Typography.H3)
                         fontWeightBold()
                         color(DesignTokens.Colors.onSurface)
                     }
                 }
             }
-            connectionStatus(status)
+            Text {
+                attr {
+                    text("服务连接")
+                    fontSize(DesignTokens.Typography.CAPTION)
+                    color(DesignTokens.Colors.onSurfaceMuted)
+                }
+                event { click { onToggleServiceSettings() } }
+            }
         }
         Text {
             attr {
-                text(provider.description())
+                text(status.description(provider))
                 fontSize(DesignTokens.Typography.CAPTION)
                 color(DesignTokens.Colors.onSurfaceMuted)
                 marginTop(DesignTokens.Spacing.XXS)
@@ -127,32 +149,102 @@ private fun ViewContainer<*, *>.chatHeader(
     }
 }
 
-private fun ViewContainer<*, *>.connectionStatus(status: WorkBuddyConnectionStatus) {
-    val label = when (status) {
-        WorkBuddyConnectionStatus.UNCONFIGURED -> "本地可用"
-        WorkBuddyConnectionStatus.AVAILABLE -> "WorkBuddy 在线"
-        WorkBuddyConnectionStatus.SENDING -> "分析中"
-        WorkBuddyConnectionStatus.ERROR -> "已切换本地"
+private fun WorkBuddyConnectionStatus.description(provider: ChatProvider): String = when (this) {
+    WorkBuddyConnectionStatus.SENDING -> "正在整理行情与价格信号"
+    WorkBuddyConnectionStatus.ERROR -> "在线服务暂不可用，本次已使用本地数据"
+    WorkBuddyConnectionStatus.AVAILABLE -> if (provider == ChatProvider.WORKBUDDY) {
+        "在线研究服务已连接"
+    } else {
+        "在线研究服务已配置，发送问题时优先使用"
     }
-    val color = when (status) {
-        WorkBuddyConnectionStatus.UNCONFIGURED -> DesignTokens.Colors.onSurfaceMuted
-        WorkBuddyConnectionStatus.AVAILABLE -> DesignTokens.Colors.success
-        WorkBuddyConnectionStatus.SENDING -> DesignTokens.Colors.accentTertiary
-        WorkBuddyConnectionStatus.ERROR -> DesignTokens.Colors.danger
-    }
-    Text {
-        attr {
-            text(label)
-            fontSize(DesignTokens.Typography.CAPTION)
-            color(color)
-        }
-    }
+    WorkBuddyConnectionStatus.UNCONFIGURED -> "当前使用本地行情分析"
 }
 
-private fun ChatProvider.description(): String = if (this == ChatProvider.LOCAL) {
-    "基于当前行情的本地分析，无需配置"
-} else {
-    "由 WorkBuddy 结合当前行情生成分析"
+private fun ViewContainer<*, *>.serviceSettings(
+    state: ChatState,
+    onUpdateServiceUrl: (String) -> Unit,
+    onSaveServiceUrl: () -> Unit,
+    onClearServiceUrl: () -> Unit,
+) {
+    View {
+        attr {
+            padding(DesignTokens.Spacing.MD)
+            backgroundColor(DesignTokens.Colors.surfaceElevated)
+        }
+        Text {
+            attr {
+                text("在线服务地址")
+                fontSize(DesignTokens.Typography.BODY)
+                fontWeightBold()
+                color(DesignTokens.Colors.onSurface)
+            }
+        }
+        Text {
+            attr {
+                text("仅支持 HTTPS 代理地址。认证信息应由代理服务保管。")
+                fontSize(DesignTokens.Typography.CAPTION)
+                color(DesignTokens.Colors.onSurfaceMuted)
+                marginTop(DesignTokens.Spacing.XXS)
+            }
+        }
+        View {
+            attr {
+                height(DesignTokens.Size.CHAT_INPUT_HEIGHT)
+                padding(left = DesignTokens.Spacing.SM, right = DesignTokens.Spacing.SM)
+                borderRadius(DesignTokens.Radius.MD)
+                backgroundColor(DesignTokens.Colors.surfaceAlt)
+                marginTop(DesignTokens.Spacing.SM)
+            }
+            Input {
+                attr {
+                    flex(DesignTokens.Size.FILL)
+                    text(state.serviceUrlDraft)
+                    placeholder("https://your-proxy.example.com/chat")
+                    placeholderColor(DesignTokens.Colors.onSurfaceMuted)
+                    color(DesignTokens.Colors.onSurface)
+                    fontSize(DesignTokens.Typography.BODY)
+                    backgroundColor(DesignTokens.Colors.surfaceAlt)
+                }
+                event { textDidChange { params -> onUpdateServiceUrl(params.text) } }
+            }
+        }
+        state.serviceSettingsError?.let { error ->
+            Text {
+                attr {
+                    text(error)
+                    fontSize(DesignTokens.Typography.CAPTION)
+                    color(DesignTokens.Colors.danger)
+                    marginTop(DesignTokens.Spacing.XS)
+                }
+            }
+        }
+        View {
+            attr {
+                flexDirectionRow()
+                alignItemsCenter()
+                marginTop(DesignTokens.Spacing.SM)
+            }
+            Text {
+                attr {
+                    text("保存并启用")
+                    fontSize(DesignTokens.Typography.BODY)
+                    color(DesignTokens.Colors.accentTertiary)
+                }
+                event { click { onSaveServiceUrl() } }
+            }
+            if (state.connectionStatus != WorkBuddyConnectionStatus.UNCONFIGURED) {
+                Text {
+                    attr {
+                        text("移除配置")
+                        fontSize(DesignTokens.Typography.BODY)
+                        color(DesignTokens.Colors.onSurfaceMuted)
+                        marginLeft(DesignTokens.Spacing.LG)
+                    }
+                    event { click { onClearServiceUrl() } }
+                }
+            }
+        }
+    }
 }
 
 private fun ViewContainer<*, *>.chatConversation(
@@ -187,7 +279,7 @@ private fun ViewContainer<*, *>.chatConversation(
 }
 
 private fun ViewContainer<*, *>.chatWelcome(
-    provider: ChatProvider,
+    @Suppress("UNUSED_PARAMETER") provider: ChatProvider,
     onQuestion: (String) -> Unit,
 ) {
     View {
@@ -204,13 +296,7 @@ private fun ViewContainer<*, *>.chatWelcome(
         }
         Text {
             attr {
-                text(
-                    if (provider == ChatProvider.LOCAL) {
-                        "输入股票名称或代码。本地分析可提供价格、趋势和风险概览。"
-                    } else {
-                        "输入股票名称或代码，WorkBuddy 将结合当前行情生成分析。"
-                    },
-                )
+                text("输入股票名称或代码，查看价格表现、趋势与风险。")
                 fontSize(DesignTokens.Typography.BODY)
                 color(DesignTokens.Colors.onSurfaceMuted)
                 marginTop(DesignTokens.Spacing.XS)
@@ -292,7 +378,7 @@ private fun ViewContainer<*, *>.chatMessage(
         }
         when (message.status) {
             ChatMessageStatus.COMPLETE -> Unit
-            ChatMessageStatus.GENERATING -> chatStatusLabel("正在生成回答…", failed = false)
+            ChatMessageStatus.GENERATING -> chatStatusLabel("正在整理…", failed = false)
             ChatMessageStatus.FAILED -> chatRetryAction(onRetry)
         }
     }
@@ -332,7 +418,7 @@ private fun ViewContainer<*, *>.chatGeneratingBubble() {
             borderRadius(DesignTokens.Radius.LG)
             backgroundColor(DesignTokens.Colors.surfaceElevated)
         }
-        chatStatusLabel("正在生成分析，连接异常时将自动切换本地", failed = false)
+        chatStatusLabel("正在整理行情数据", failed = false)
     }
 }
 

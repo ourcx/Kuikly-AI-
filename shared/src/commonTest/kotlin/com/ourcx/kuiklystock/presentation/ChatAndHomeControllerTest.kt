@@ -3,6 +3,7 @@ package com.ourcx.kuiklystock.presentation
 import com.ourcx.kuiklystock.data.ChatRepository
 import com.ourcx.kuiklystock.data.InMemoryChatRepository
 import com.ourcx.kuiklystock.data.InMemoryStockRepository
+import com.ourcx.kuiklystock.data.ResearchServiceConfiguration
 import com.ourcx.kuiklystock.domain.AppDestination
 import com.ourcx.kuiklystock.domain.AppTab
 import com.ourcx.kuiklystock.domain.ChatContentBlock
@@ -233,6 +234,82 @@ class ChatAndHomeControllerTest {
 
         assertEquals(originalState, controller.state)
         assertTrue(repository.requests.isEmpty())
+    }
+
+    @Test
+    fun serviceSettingsSaveAndClearRefreshConnectionState() {
+        val configuration = FakeServiceConfiguration()
+        val controller = ChatController(
+            chatRepository = InMemoryChatRepository(),
+            serviceConfiguration = configuration,
+        )
+
+        controller.toggleServiceSettings()
+        controller.updateServiceUrl("https://proxy.example.com/chat")
+        controller.saveServiceUrl()
+
+        assertEquals("https://proxy.example.com/chat", configuration.url)
+        assertFalse(controller.state.serviceSettingsVisible)
+        assertEquals(WorkBuddyConnectionStatus.AVAILABLE, controller.state.connectionStatus)
+
+        controller.clearServiceUrl()
+        assertEquals("", configuration.url)
+        assertEquals(WorkBuddyConnectionStatus.UNCONFIGURED, controller.state.connectionStatus)
+        assertEquals(ChatProvider.LOCAL, controller.state.provider)
+    }
+
+    @Test
+    fun invalidServiceSettingsRemainVisibleWithReadableError() {
+        val configuration = FakeServiceConfiguration()
+        val controller = ChatController(
+            chatRepository = InMemoryChatRepository(),
+            serviceConfiguration = configuration,
+        )
+
+        controller.toggleServiceSettings()
+        controller.updateServiceUrl("http://unsafe.example.com")
+        controller.saveServiceUrl()
+
+        assertTrue(controller.state.serviceSettingsVisible)
+        assertEquals("请输入有效的 HTTPS 服务地址", controller.state.serviceSettingsError)
+        assertEquals("", configuration.url)
+    }
+
+    @Test
+    fun configuredServiceLocalFallbackIsReportedAsRemoteError() {
+        val configuration = FakeServiceConfiguration().apply {
+            url = "https://proxy.example.com/chat"
+        }
+        val controller = ChatController(
+            chatRepository = InMemoryChatRepository(),
+            serviceConfiguration = configuration,
+        )
+
+        controller.updateDraft("分析 AAPL")
+        controller.send()
+
+        assertEquals(ChatProvider.LOCAL, controller.state.provider)
+        assertEquals(WorkBuddyConnectionStatus.ERROR, controller.state.connectionStatus)
+    }
+}
+
+private class FakeServiceConfiguration : ResearchServiceConfiguration {
+    var url: String = ""
+    override val isConfigured: Boolean
+        get() = url.isNotEmpty()
+
+    override fun currentUrl(): String = url
+
+    override fun save(url: String): Result<Unit> {
+        if (!url.startsWith("https://")) {
+            return Result.failure(IllegalArgumentException("请输入有效的 HTTPS 服务地址"))
+        }
+        this.url = url
+        return Result.success(Unit)
+    }
+
+    override fun clear() {
+        url = ""
     }
 }
 

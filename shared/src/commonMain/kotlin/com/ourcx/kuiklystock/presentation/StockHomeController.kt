@@ -4,6 +4,7 @@ import com.ourcx.kuiklystock.data.ChatRepository
 import com.ourcx.kuiklystock.data.InMemoryChatRepository
 import com.ourcx.kuiklystock.data.InMemoryStockRepository
 import com.ourcx.kuiklystock.data.StockRepository
+import com.ourcx.kuiklystock.data.ResearchServiceConfiguration
 import com.ourcx.kuiklystock.domain.AppDestination
 import com.ourcx.kuiklystock.domain.AppTab
 import com.ourcx.kuiklystock.domain.ChatContext
@@ -14,6 +15,7 @@ import com.ourcx.kuiklystock.domain.StockHomeState
 class StockHomeController(
     private val stockRepository: StockRepository = InMemoryStockRepository(),
     chatRepository: ChatRepository = InMemoryChatRepository(),
+    serviceConfiguration: ResearchServiceConfiguration? = null,
     private val onStateChanged: (StockHomeState) -> Unit = {},
 ) {
     var state: StockHomeState = StockHomeState()
@@ -42,6 +44,7 @@ class StockHomeController(
         onStateChanged = { chatState ->
             updateChatState(chatState)
         },
+        serviceConfiguration = serviceConfiguration,
     )
 
     init {

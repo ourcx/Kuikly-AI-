@@ -47,7 +47,7 @@ internal fun ViewContainer<*, *>.chatComposer(
                         backgroundColor(DesignTokens.Colors.primary)
                         text(state.draft)
                         placeholder(
-                            if (state.isSending) "正在生成回答…" else "输入你的投研问题",
+                            if (state.isSending) "正在整理…" else "输入股票或研究问题",
                         )
                         placeholderColor(DesignTokens.Colors.onSurfaceMuted)
                         color(DesignTokens.Colors.onSurface)
@@ -79,7 +79,7 @@ internal fun ViewContainer<*, *>.chatComposer(
             event { click { if (canSend) onSend() } }
             Text {
                 attr {
-                    text(if (state.isSending) "生成中…" else "发送")
+                    text(if (state.isSending) "处理中" else "发送")
                     fontSize(DesignTokens.Typography.BODY_LARGE)
                     fontWeightBold()
                     color(

@@ -6,6 +6,7 @@ import com.ourcx.kuiklystock.data.InMemoryStockRepository
 import com.ourcx.kuiklystock.data.InMemoryChatRepository
 import com.ourcx.kuiklystock.data.ResilientChatRepository
 import com.ourcx.kuiklystock.data.WorkBuddyChatRepository
+import com.ourcx.kuiklystock.data.ResearchServiceConfiguration
 import com.ourcx.kuiklystock.domain.AppDestination
 import com.ourcx.kuiklystock.domain.AppTab
 import com.ourcx.kuiklystock.domain.MarketFilter
@@ -31,15 +32,26 @@ internal class StockHomePage : BasePager() {
 
     private val controller by lazy {
         val bridgeModule = bridgeModule
+        val serviceConfiguration = object : ResearchServiceConfiguration {
+            override val isConfigured: Boolean
+                get() = bridgeModule.isWorkBuddyConfigured()
+
+            override fun currentUrl(): String = bridgeModule.workBuddyProxyUrl()
+
+            override fun save(url: String): Result<Unit> = bridgeModule.saveWorkBuddyProxyUrl(url)
+
+            override fun clear() = bridgeModule.clearWorkBuddyProxyUrl()
+        }
         StockHomeController(
             stockRepository = InMemoryStockRepository(),
             chatRepository = ResilientChatRepository(
                 remoteRepository = WorkBuddyChatRepository(
-                    isConfigured = bridgeModule.isWorkBuddyConfigured(),
+                    configurationProvider = bridgeModule::isWorkBuddyConfigured,
                     requestInvoker = bridgeModule::requestWorkBuddy,
                 ),
                 localRepository = InMemoryChatRepository(),
             ),
+            serviceConfiguration = serviceConfiguration,
             onStateChanged = { state -> viewState = state },
         )
     }
@@ -84,6 +96,10 @@ internal class StockHomePage : BasePager() {
                     onSendChat = context.controller.chatController::send,
                     onRetryChat = context.controller.chatController::retry,
                     onClearChat = context.controller.chatController::clearConversation,
+                    onToggleServiceSettings = context.controller.chatController::toggleServiceSettings,
+                    onUpdateServiceUrl = context.controller.chatController::updateServiceUrl,
+                    onSaveServiceUrl = context.controller.chatController::saveServiceUrl,
+                    onClearServiceUrl = context.controller.chatController::clearServiceUrl,
                 )
                 stockHomeTabBar(
                     selectedTab = context.viewState.selectedTab,
@@ -112,6 +128,10 @@ fun ViewContainer<*, *>.stockHomeContent(
     onSendChat: () -> Unit,
     onRetryChat: () -> Unit,
     onClearChat: () -> Unit,
+    onToggleServiceSettings: () -> Unit,
+    onUpdateServiceUrl: (String) -> Unit,
+    onSaveServiceUrl: () -> Unit,
+    onClearServiceUrl: () -> Unit,
 ) {
     View {
         attr {
@@ -141,6 +161,10 @@ fun ViewContainer<*, *>.stockHomeContent(
                     onSend = onSendChat,
                     onRetry = onRetryChat,
                     onClear = onClearChat,
+                    onToggleServiceSettings = onToggleServiceSettings,
+                    onUpdateServiceUrl = onUpdateServiceUrl,
+                    onSaveServiceUrl = onSaveServiceUrl,
+                    onClearServiceUrl = onClearServiceUrl,
                     onSelectStock = onSelectStock,
                 )
             }
@@ -177,8 +201,8 @@ fun ViewContainer<*, *>.stockHomeTabBar(
                 padding(DesignTokens.Spacing.XXS)
                 backgroundColor(DesignTokens.Colors.surfaceAlt)
             }
-            stockHomeTabItem("行情", "MARKET", AppTab.MARKET, selectedTab, onSelectTab)
-            stockHomeTabItem("AI 投研", "WORKBUDDY", AppTab.AI, selectedTab, onSelectTab)
+            stockHomeTabItem("行情", AppTab.MARKET, selectedTab, onSelectTab)
+            stockHomeTabItem("研究", AppTab.AI, selectedTab, onSelectTab)
         }
     }
 }
@@ -224,40 +248,10 @@ private fun ViewContainer<*, *>.stockHomeHeader() {
             }
             Text {
                 attr {
-                    text("跨端智能行情终端")
+                    text("多市场行情与研究")
                     fontSize(DesignTokens.Typography.CAPTION)
                     color(DesignTokens.Colors.onSurfaceMuted)
                     marginTop(DesignTokens.Spacing.XXS)
-                }
-            }
-        }
-        View {
-            attr {
-                flexDirectionRow()
-                alignItemsCenter()
-                borderRadius(DesignTokens.Radius.FULL)
-                padding(
-                    top = DesignTokens.Spacing.XXS,
-                    bottom = DesignTokens.Spacing.XXS,
-                    left = DesignTokens.Spacing.SM,
-                    right = DesignTokens.Spacing.SM,
-                )
-                backgroundColor(DesignTokens.Colors.surfaceElevated)
-            }
-            View {
-                attr {
-                    width(DesignTokens.Size.STATUS_DOT)
-                    height(DesignTokens.Size.STATUS_DOT)
-                    borderRadius(DesignTokens.Radius.FULL)
-                    backgroundColor(DesignTokens.Colors.accentTertiary)
-                    marginRight(DesignTokens.Spacing.XS)
-                }
-            }
-            Text {
-                attr {
-                    text("在线")
-                    fontSize(DesignTokens.Typography.CAPTION)
-                    color(DesignTokens.Colors.onSurface)
                 }
             }
         }
@@ -266,7 +260,6 @@ private fun ViewContainer<*, *>.stockHomeHeader() {
 
 private fun ViewContainer<*, *>.stockHomeTabItem(
     label: String,
-    eyebrow: String,
     tab: AppTab,
     selectedTab: AppTab,
     onSelectTab: (AppTab) -> Unit,
@@ -277,26 +270,15 @@ private fun ViewContainer<*, *>.stockHomeTabItem(
             flex(DesignTokens.Size.FILL)
             allCenter()
             borderRadius(DesignTokens.Radius.LG)
-            backgroundColor(
-                if (selected) DesignTokens.Colors.accentPrimary else DesignTokens.Colors.transparent,
-            )
+            backgroundColor(if (selected) DesignTokens.Colors.surfaceElevated else DesignTokens.Colors.transparent)
         }
         event { click { onSelectTab(tab) } }
-        Text {
-            attr {
-                text(eyebrow)
-                fontSize(DesignTokens.Typography.CAPTION)
-                color(
-                    if (selected) DesignTokens.Colors.onPrimary else DesignTokens.Colors.accentTertiary,
-                )
-            }
-        }
         Text {
             attr {
                 text(label)
                 fontSize(DesignTokens.Typography.BODY_LARGE)
                 color(
-                    if (selected) DesignTokens.Colors.onPrimary else DesignTokens.Colors.onSurfaceMuted,
+                    if (selected) DesignTokens.Colors.onSurface else DesignTokens.Colors.onSurfaceMuted,
                 )
                 if (selected) {
                     fontWeightBold()

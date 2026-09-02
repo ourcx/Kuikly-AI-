@@ -473,7 +473,7 @@ private fun ViewContainer<*, *>.marketQuoteCard(
             }
             Text {
                 attr {
-                    text("问 AI")
+                    text("研究")
                     fontSize(DesignTokens.Typography.CAPTION)
                     color(DesignTokens.Colors.accentTertiary)
                     marginLeft(DesignTokens.Spacing.MD)

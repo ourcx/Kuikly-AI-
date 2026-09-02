@@ -1,18 +1,19 @@
 # KuiklyStock
 
-KuiklyStock 是使用 Kuikly UI DSL 构建的股票行情与 AI 投研演示应用。项目采用 Kotlin Multiplatform 组织共享代码，当前实际启用并验证的运行目标为 Android；行情数据来自本地 Fixture，AI 会话可通过合作方 HTTPS 代理接入 WorkBuddy OpenAPI。
+KuiklyStock 是使用 Kuikly UI DSL 构建的股票行情与研究演示应用。项目采用 Kotlin Multiplatform 组织共享代码，当前实际启用并验证的运行目标为 Android；行情数据来自本地 Fixture，研究会话可通过合作方 HTTPS 代理接入 WorkBuddy OpenAPI。
 
 ## 功能清单
 
-- 行情与 AI 投研双 Tab 首页。
+- 行情与研究双 Tab 首页。
 - 行情发现支持按名称、代码、交易所搜索，按港股、A 股、美股筛选，并支持涨幅、跌幅和日内振幅排序。
 - 会话级自选列表，支持收藏、仅看自选，以及空结果一键恢复筛选。
 - 会话级最近浏览记录按最新优先去重，支持快速返回最近研究的 3 个标的。
-- 紧凑行情列表展示统一对齐的名称、代码、最新价、涨跌额、涨跌幅与日内高低，并支持进入详情或发起 AI 分析。
-- 统一股票详情页，展示价格、高低价、成交量、趋势与 AI 风险解读。
-- AI 投研会话支持问题输入、常用研究任务、一键个股分析、发送、清空、生成状态、失败提示与重试。
-- AI 默认采用 WorkBuddy 优先、本地行情分析兜底的双通道策略，并在界面明确展示实际来源。
-- AI 回复支持 Markdown、股票卡片和迷你走势图，并可从股票卡片进入统一详情页。
+- 紧凑行情列表展示统一对齐的名称、代码、最新价、涨跌额、涨跌幅与日内高低，并支持进入详情或发起研究。
+- 统一股票详情页，展示价格、高低价、成交量、趋势与风险提示。
+- 研究会话支持问题输入、常用任务、一键个股研究、发送、清空、处理状态、失败提示与重试。
+- 在线服务采用 WorkBuddy 优先、本地行情分析兜底的双通道策略，并在界面明确展示实际来源。
+- 在线回复支持 Markdown、股票卡片和迷你走势图，并可从股票卡片进入统一详情页。
+- 服务连接支持在应用内配置 HTTPS 代理地址，保存后无需重建或重启即可使用。
 - 行情流程支持内容、加载、空数据、失败及重试等演示状态。
 
 ## 技术栈
@@ -28,7 +29,7 @@ KuiklyStock 是使用 Kuikly UI DSL 构建的股票行情与 AI 投研演示应�
 
 ## 技术架构
 
-Android 宿主负责应用启动、Kuikly 渲染容器和页面路由，业务状态、领域模型与 Kuikly UI 位于 `shared`。`StockHome` 是演示应用的单页面入口，页面内部通过状态切换行情、AI 投研和统一股票详情。
+Android 宿主负责应用启动、Kuikly 渲染容器和页面路由，业务状态、领域模型与 Kuikly UI 位于 `shared`。`StockHome` 是演示应用的单页面入口，页面内部通过状态切换行情、研究和统一股票详情。
 
 ```text
 androidApp/
@@ -38,7 +39,7 @@ shared/
     ├── commonMain/kotlin/com/ourcx/kuiklystock/
     │   ├── data/              # Repository 契约实现与离线 Fixture
     │   ├── domain/            # 行情、详情、会话模型及页面状态
-    │   ├── presentation/      # 行情、AI 会话和首页控制器
+    │   ├── presentation/      # 行情、研究会话和首页控制器
     │   ├── ui/component/      # Kuikly 页面内容与可复用组件
     │   ├── theme/             # DesignTokens 视觉常量
     │   ├── base/              # Kuikly 页面基础设施与桥接能力
@@ -52,7 +53,7 @@ shared/
 Fixture Repository → Controller → Page State → Kuikly UI
 ```
 
-AI 会话数据流为：
+研究会话数据流为：
 
 ```text
 Kuikly UI DSL → ChatController → ResilientChatRepository
@@ -89,13 +90,13 @@ Kuikly UI DSL → ChatController → ResilientChatRepository
 ./gradlew :androidApp:assembleDebug --no-daemon --max-workers=1
 ```
 
-需要连接 WorkBuddy 时，通过构建进程环境变量提供合作方 HTTPS 代理地址：
+需要连接 WorkBuddy 时，可在应用“研究”页打开“服务连接”，填写合作方 HTTPS 代理地址。地址保存于应用私有存储，下一次发送立即生效。也可通过构建进程环境变量提供默认地址：
 
 ```bash
 WORKBUDDY_PROXY_URL="https://proxy.example.com/workbuddy/chat" ./gradlew :androidApp:assembleDebug --no-daemon --max-workers=1
 ```
 
-`WORKBUDDY_PROXY_URL` 在构建时写入应用的 `BuildConfig`，修改后需要重新构建并安装 APK。客户端仅接受协议为 `https` 且包含有效主机名的地址。变量未设置、代理超时、非 2xx 或响应无效时，应用会自动切换为本地行情分析，不会让 AI 功能不可用；界面会明确标识“本地分析”，不会伪装为在线 WorkBuddy 结果。
+运行时地址优先于 `BuildConfig` 中的 `WORKBUDDY_PROXY_URL` 默认值。客户端仅接受协议为 `https`、包含有效主机名且不含 userinfo、查询参数或 fragment 的地址。地址未设置、代理超时、非 2xx 或响应无效时，应用会自动切换为本地行情分析；界面会明确展示当前来源，不会把本地结果标记为在线结果。
 
 `local.properties` 只用于 Android SDK 等本机工具链路径；不建议用它保存合作方地址，更不得写入凭证或其他敏感内容。构建示例中的域名仅为占位符。
 
@@ -150,7 +151,8 @@ Android 客户端向 `WORKBUDDY_PROXY_URL` 指定的合作方接口发送 `POST`
 
 ## WorkBuddy 安全边界
 
-- Android 客户端只连接构建时配置的合作方 HTTPS 代理，不直接调用 WorkBuddy OpenAPI，也不接受 HTTP 明文地址。
+- Android 客户端只连接应用内或构建时配置的合作方 HTTPS 代理，不直接调用 WorkBuddy OpenAPI，也不接受 HTTP 明文地址。
+- 应用内仅保存代理 URL，不提供 Token、Cookie、密码、私钥或 OAuth 票据输入项。
 - WorkBuddy 凭证、`access_token`、`refresh_token`、`client_secret`，以及 OAuth PKCE verifier、authorization code 等票据只能由合作方后端持有和处理，禁止写入客户端、构建变量、`local.properties`、源码或版本库。
 - 合作方后端负责凭证安全存储、OAuth 流程、令牌刷新、访问控制、限流、审计和上游错误收敛；不得把上游凭证透传给客户端。
 - 客户端请求只携带接口契约所列业务字段，不应把凭证、个人信息或其他敏感数据放入 `question`、`conversation_id` 或 `context.quotes`。
@@ -162,7 +164,7 @@ Android 客户端向 `WORKBUDDY_PROXY_URL` 指定的合作方接口发送 `POST`
 
 - 行情 Tab 默认展示多市场股票 Fixture，可进入任意股票详情。
 - 行情页由控制器统一建模加载、内容、空数据和错误状态；错误状态支持重试。
-- AI 投研无需配置即可使用本地行情分析；配置合作方 HTTPS 代理后优先使用 WorkBuddy，调用失败时自动降级。
+- 研究功能无需配置即可使用本地行情分析；配置合作方 HTTPS 代理后优先使用 WorkBuddy，调用失败时自动降级。
 - 所有行情、观点与时间均为演示数据，不构成投资建议。
 
 ## DesignTokens 规范
@@ -173,10 +175,10 @@ Android 客户端向 `WORKBUDDY_PROXY_URL` 指定的合作方接口发送 `POST`
 
 ## Markdown 样式说明
 
-AI 会话中的 Markdown 内容使用 `KuiklyMarkdown` 1.0.6-2.1.21，并通过应用级 `MarkdownConfig` 将正文、标题、引用、链接和代码块映射到 `DesignTokens`。
+研究会话中的 Markdown 内容使用 `KuiklyMarkdown` 1.0.6-2.1.21，并通过应用级 `MarkdownConfig` 将正文、标题、引用、链接和代码块映射到 `DesignTokens`。
 
 ## 当前限制
 
 - 当前仅启用 Android 构建目标；仓库中的 iOS、OpenHarmony 等目录不代表本 Demo 已完成对应平台适配。
-- 行情能力仍为本地 Fixture；未配置 WorkBuddy 时 AI 使用这些行情生成确定性本地分析。本项目不包含实时行情、账号体系、交易能力或生产级数据持久化，自选与最近浏览仅保留在当前应用会话。
-- AI 回复中的结构化股票元数据用于演示；元数据不可用时应保留 Markdown 正文作为降级展示。
+- 行情能力仍为本地 Fixture；未配置 WorkBuddy 时研究页使用这些行情生成确定性本地分析。本项目不包含实时行情、账号体系、交易能力或生产级数据持久化，自选与最近浏览仅保留在当前应用会话。
+- 在线回复中的结构化股票元数据用于演示；元数据不可用时应保留 Markdown 正文作为降级展示。

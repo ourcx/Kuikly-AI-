@@ -7,9 +7,16 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 class WorkBuddyChatRepository(
-    override val isConfigured: Boolean,
+    private val configurationProvider: () -> Boolean,
     private val requestInvoker: (payload: String, callback: (Result<String>) -> Unit) -> Unit,
 ) : ChatRepository {
+    constructor(
+        isConfigured: Boolean,
+        requestInvoker: (payload: String, callback: (Result<String>) -> Unit) -> Unit,
+    ) : this({ isConfigured }, requestInvoker)
+
+    override val isConfigured: Boolean
+        get() = configurationProvider()
 
     override fun ask(request: ChatRequest, callback: (Result<ChatResponse>) -> Unit) {
         if (!isConfigured) {

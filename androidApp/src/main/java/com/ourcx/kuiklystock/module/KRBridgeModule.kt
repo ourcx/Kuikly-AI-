@@ -55,6 +55,12 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
                 SimpleDateFormat(paramJSON.optString("format")).format(data)
             }
             "isWorkBuddyConfigured" -> workBuddyProxyUrl()?.let { true } ?: false
+            "getWorkBuddyProxyUrl" -> workBuddyProxyUrl()?.toString().orEmpty()
+            "saveWorkBuddyProxyUrl" -> saveWorkBuddyProxyUrl(params)
+            "clearWorkBuddyProxyUrl" -> {
+                preferences.edit().remove(PREF_WORK_BUDDY_PROXY_URL).apply()
+                true
+            }
             "requestWorkBuddy" -> {
                 requestWorkBuddy(params, callback)
                 null
@@ -86,6 +92,16 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
                 )
             callbackOnMainThread(callback, response)
         }
+    }
+
+    private fun saveWorkBuddyProxyUrl(params: String?): Any {
+        val rawUrl = runCatching { JSONObject(params ?: "{}").optString(WORK_BUDDY_PROXY_URL) }
+            .getOrDefault("")
+            .trim()
+        val validatedUrl = validateProxyUrl(rawUrl)
+            ?: return "请输入有效的 HTTPS 服务地址"
+        preferences.edit().putString(PREF_WORK_BUDDY_PROXY_URL, validatedUrl.toString()).apply()
+        return true
     }
 
     private fun postWorkBuddyRequest(proxyUrl: URL, payload: String): String {
@@ -137,11 +153,22 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
         else -> "Unable to reach WorkBuddy proxy"
     }
 
-    private fun workBuddyProxyUrl(): URL? = runCatching {
-        URL(BuildConfig.WORKBUDDY_PROXY_URL.trim()).takeIf {
-            it.protocol.equals("https", ignoreCase = true) && !it.host.isNullOrBlank()
+    private fun workBuddyProxyUrl(): URL? {
+        val runtimeUrl = preferences.getString(PREF_WORK_BUDDY_PROXY_URL, null).orEmpty()
+        return validateProxyUrl(runtimeUrl) ?: validateProxyUrl(BuildConfig.WORKBUDDY_PROXY_URL)
+    }
+
+    private fun validateProxyUrl(rawUrl: String): URL? {
+        val candidate = rawUrl.trim()
+        if (candidate.isEmpty() || candidate.contains('\\')) return null
+        return runCatching { URL(candidate) }.getOrNull()?.takeIf { url ->
+            url.protocol.equals("https", ignoreCase = true) &&
+                url.host.isNotBlank() &&
+                url.userInfo == null &&
+                url.query == null &&
+                url.ref == null
         }
-    }.getOrNull()
+    }
 
     private fun readLimited(stream: InputStream?, maxChars: Int): String {
         if (stream == null) return ""
@@ -177,6 +204,7 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
         const val MODULE_NAME = "HRBridgeModule"
 
         private const val WORK_BUDDY_PAYLOAD = "payload"
+        private const val WORK_BUDDY_PROXY_URL = "url"
         private const val WORK_BUDDY_SUCCESS = "success"
         private const val WORK_BUDDY_DATA = "data"
         private const val WORK_BUDDY_ERROR = "error"
@@ -185,6 +213,8 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
         private const val MAX_ERROR_BODY_CHARS = 4_096
         private const val MAX_SUCCESS_BODY_CHARS = 1_000_000
         private const val MAX_SAFE_ERROR_CHARS = 300
+        private const val PREFS_NAME = "research_service"
+        private const val PREF_WORK_BUDDY_PROXY_URL = "work_buddy_proxy_url"
 
         private val workBuddyExecutor = Executors.newSingleThreadExecutor()
         private val mainHandler = Handler(Looper.getMainLooper())
@@ -193,6 +223,10 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
             """(?i)"?(authorization|access[_-]?token|refresh[_-]?token|token|api[_-]?key|secret|password)"?\s*[:=]\s*"?[^\s,;"]+""",
         )
         private val WHITESPACE_PATTERN = Regex("\\s+")
+    }
+
+    private val preferences by lazy {
+        KRApplication.application.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     }
 }
 

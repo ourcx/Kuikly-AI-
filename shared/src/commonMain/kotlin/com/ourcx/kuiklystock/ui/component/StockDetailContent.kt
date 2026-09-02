@@ -31,7 +31,7 @@ fun ViewContainer<*, *>.stockDetailContentSlot(
         detailBackButton(onBack)
         when (val content = state?.content) {
             null -> detailStatus("未找到详情", "当前股票详情不可用，请返回行情列表重新选择。")
-            LoadState.Loading -> detailStatus("正在加载详情", "正在获取股票行情与 AI 洞察…")
+            LoadState.Loading -> detailStatus("正在加载详情", "正在获取股票行情与风险信息…")
             LoadState.Empty -> detailStatus("暂无详情", "当前股票没有可展示的详情数据。")
             is LoadState.Error -> detailStatus("详情加载失败", content.message)
             is LoadState.Content -> detailContent(content.value)
@@ -308,7 +308,7 @@ private fun ViewContainer<*, *>.insightCard(insight: StockInsight) {
             }
             Text {
                 attr {
-                    text("AI 洞察 · ${insight.trendLabel}")
+                    text("趋势判断 · ${insight.trendLabel}")
                     fontSize(DesignTokens.Typography.CAPTION)
                     fontWeightBold()
                     color(DesignTokens.Colors.onPrimary)
@@ -373,7 +373,7 @@ private fun ViewContainer<*, *>.insightLine(value: String) {
 private fun ViewContainer<*, *>.disclaimer() {
     Text {
         attr {
-            text("免责声明：以上行情与 AI 洞察仅供信息参考，不构成任何投资建议。投资有风险，决策需谨慎。")
+            text("免责声明：以上行情与趋势判断仅供信息参考，不构成任何投资建议。投资有风险，决策需谨慎。")
             fontSize(DesignTokens.Typography.CAPTION)
             color(DesignTokens.Colors.onSurfaceMuted)
             marginBottom(DesignTokens.Spacing.MD)

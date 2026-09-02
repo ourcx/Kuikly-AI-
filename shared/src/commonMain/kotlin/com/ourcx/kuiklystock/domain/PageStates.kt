@@ -57,6 +57,9 @@ data class ChatState(
     val conversationId: String? = null,
     val connectionStatus: WorkBuddyConnectionStatus = WorkBuddyConnectionStatus.UNCONFIGURED,
     val provider: ChatProvider = ChatProvider.WORKBUDDY,
+    val serviceSettingsVisible: Boolean = false,
+    val serviceUrlDraft: String = "",
+    val serviceSettingsError: String? = null,
 )
 
 data class StockHomeState(
