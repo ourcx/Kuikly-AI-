@@ -23,7 +23,7 @@ import com.tencent.kuiklybase.config.MarkdownTypography
 import com.tencent.kuiklybase.config.TextStyleConfig
 
 /**
- * Builds the complete WorkBuddy research experience from immutable chat/market state.
+ * Builds the complete OpenAI research experience from immutable chat/market state.
  * User intents are emitted only through callbacks; selecting structured stock content forwards its symbol.
  */
 fun ViewContainer<*, *>.aiResearchContentSlot(
@@ -151,13 +151,13 @@ private fun ViewContainer<*, *>.chatHeader(
 
 private fun WorkBuddyConnectionStatus.description(provider: ChatProvider): String = when (this) {
     WorkBuddyConnectionStatus.SENDING -> "正在整理行情与价格信号"
-    WorkBuddyConnectionStatus.ERROR -> "在线服务暂不可用，本次已使用本地数据"
-    WorkBuddyConnectionStatus.AVAILABLE -> if (provider == ChatProvider.WORKBUDDY) {
-        "在线研究服务已连接"
+    WorkBuddyConnectionStatus.ERROR -> "OpenAI 服务暂不可用，请重试"
+    WorkBuddyConnectionStatus.AVAILABLE -> if (provider == ChatProvider.OPENAI) {
+        "OpenAI 分析已连接"
     } else {
-        "在线研究服务已配置，发送问题时优先使用"
+        "OpenAI 服务已配置，可以开始分析"
     }
-    WorkBuddyConnectionStatus.UNCONFIGURED -> "当前使用本地行情分析"
+    WorkBuddyConnectionStatus.UNCONFIGURED -> "配置 OpenAI 代理后即可开始分析"
 }
 
 private fun ViewContainer<*, *>.serviceSettings(
@@ -181,7 +181,7 @@ private fun ViewContainer<*, *>.serviceSettings(
         }
         Text {
             attr {
-                text("仅支持 HTTPS 代理地址。认证信息应由代理服务保管。")
+                text("填写 OpenAI Responses API 的 HTTPS 代理地址，密钥由服务端保管。")
                 fontSize(DesignTokens.Typography.CAPTION)
                 color(DesignTokens.Colors.onSurfaceMuted)
                 marginTop(DesignTokens.Spacing.XXS)
@@ -199,7 +199,7 @@ private fun ViewContainer<*, *>.serviceSettings(
                 attr {
                     flex(DesignTokens.Size.FILL)
                     text(state.serviceUrlDraft)
-                    placeholder("https://your-proxy.example.com/chat")
+                    placeholder("https://your-proxy.example.com/v1/responses")
                     placeholderColor(DesignTokens.Colors.onSurfaceMuted)
                     color(DesignTokens.Colors.onSurface)
                     fontSize(DesignTokens.Typography.BODY)

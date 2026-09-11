@@ -32,8 +32,9 @@ class MarketController(
     fun load() {
         sourceStatus = MarketSourceStatus.LOADING
         updateState(state.copy(quotes = LoadState.Loading, totalCount = 0))
-        runCatching { stockRepository.getQuotes() }
-            .fold(
+        runCatching {
+            stockRepository.getQuotes { result ->
+                result.fold(
                 onSuccess = { quotes ->
                     originalQuotesSnapshot = quotes
                     sourceStatus = if (quotes.isEmpty()) {
@@ -52,7 +53,17 @@ class MarketController(
                         ),
                     )
                 },
+                )
+            }
+        }.onFailure { error ->
+            sourceStatus = MarketSourceStatus.ERROR
+            updateState(
+                state.copy(
+                    quotes = LoadState.Error(error.readableMessage()),
+                    totalCount = 0,
+                ),
             )
+        }
     }
 
     /** Intent: Keep the demo-state API compatible while preserving current discovery controls and total-count semantics. */

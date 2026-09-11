@@ -8,7 +8,9 @@ import com.ourcx.kuiklystock.domain.StockQuote
 
 /** Deterministic, dependency-free stock data source for previews and controller tests. */
 class InMemoryStockRepository : StockRepository {
-    override fun getQuotes(): List<StockQuote> = FIXTURE_QUOTES
+    override fun getQuotes(callback: (Result<List<StockQuote>>) -> Unit) {
+        callback(Result.success(FIXTURE_QUOTES))
+    }
 
     override fun getQuote(symbol: String): StockQuote =
         QUOTES_BY_SYMBOL[normalizeSymbol(symbol)] ?: throw StockNotFoundException(symbol)

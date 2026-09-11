@@ -2,11 +2,9 @@ package com.ourcx.kuiklystock
 
 import com.ourcx.kuiklystock.base.BasePager
 import com.ourcx.kuiklystock.base.bridgeModule
-import com.ourcx.kuiklystock.data.InMemoryStockRepository
-import com.ourcx.kuiklystock.data.InMemoryChatRepository
-import com.ourcx.kuiklystock.data.ResilientChatRepository
-import com.ourcx.kuiklystock.data.WorkBuddyChatRepository
+import com.ourcx.kuiklystock.data.OpenAiChatRepository
 import com.ourcx.kuiklystock.data.ResearchServiceConfiguration
+import com.ourcx.kuiklystock.data.TencentStockRepository
 import com.ourcx.kuiklystock.domain.AppDestination
 import com.ourcx.kuiklystock.domain.AppTab
 import com.ourcx.kuiklystock.domain.MarketFilter
@@ -34,22 +32,20 @@ internal class StockHomePage : BasePager() {
         val bridgeModule = bridgeModule
         val serviceConfiguration = object : ResearchServiceConfiguration {
             override val isConfigured: Boolean
-                get() = bridgeModule.isWorkBuddyConfigured()
+                get() = bridgeModule.isOpenAiConfigured()
 
-            override fun currentUrl(): String = bridgeModule.workBuddyProxyUrl()
+            override fun currentUrl(): String = bridgeModule.openAiProxyUrl()
 
-            override fun save(url: String): Result<Unit> = bridgeModule.saveWorkBuddyProxyUrl(url)
+            override fun save(url: String): Result<Unit> = bridgeModule.saveOpenAiProxyUrl(url)
 
-            override fun clear() = bridgeModule.clearWorkBuddyProxyUrl()
+            override fun clear() = bridgeModule.clearOpenAiProxyUrl()
         }
         StockHomeController(
-            stockRepository = InMemoryStockRepository(),
-            chatRepository = ResilientChatRepository(
-                remoteRepository = WorkBuddyChatRepository(
-                    configurationProvider = bridgeModule::isWorkBuddyConfigured,
-                    requestInvoker = bridgeModule::requestWorkBuddy,
-                ),
-                localRepository = InMemoryChatRepository(),
+            stockRepository = TencentStockRepository(bridgeModule::requestTencentQuotes),
+            chatRepository = OpenAiChatRepository(
+                configurationProvider = bridgeModule::isOpenAiConfigured,
+                modelProvider = bridgeModule::openAiModel,
+                requestInvoker = bridgeModule::requestOpenAi,
             ),
             serviceConfiguration = serviceConfiguration,
             onStateChanged = { state -> viewState = state },

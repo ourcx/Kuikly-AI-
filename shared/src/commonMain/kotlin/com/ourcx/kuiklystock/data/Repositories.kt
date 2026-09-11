@@ -6,8 +6,8 @@ import com.ourcx.kuiklystock.domain.StockInsight
 import com.ourcx.kuiklystock.domain.StockQuote
 
 interface StockRepository {
-    /** Returns the complete quote snapshot in a stable display order. */
-    fun getQuotes(): List<StockQuote>
+    /** Returns the complete quote snapshot in a stable display order without blocking the UI thread. */
+    fun getQuotes(callback: (Result<List<StockQuote>>) -> Unit)
 
     /**
      * Returns the quote for [symbol].

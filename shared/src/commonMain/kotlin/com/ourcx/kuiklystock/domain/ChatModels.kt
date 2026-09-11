@@ -39,6 +39,7 @@ enum class WorkBuddyConnectionStatus {
 
 @Serializable
 enum class ChatProvider {
+    OPENAI,
     WORKBUDDY,
     LOCAL,
 }
@@ -75,5 +76,5 @@ data class ChatResponse(
     val symbols: List<String> = emptyList(),
     @SerialName("show_trend")
     val showTrend: Boolean = false,
-    val provider: ChatProvider = ChatProvider.WORKBUDDY,
+    val provider: ChatProvider = ChatProvider.OPENAI,
 )

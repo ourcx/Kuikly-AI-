@@ -9,8 +9,10 @@ import com.ourcx.kuiklystock.domain.AppDestination
 import com.ourcx.kuiklystock.domain.AppTab
 import com.ourcx.kuiklystock.domain.ChatContext
 import com.ourcx.kuiklystock.domain.ChatQuoteContext
+import com.ourcx.kuiklystock.domain.LoadState
 import com.ourcx.kuiklystock.domain.StockDetailState
 import com.ourcx.kuiklystock.domain.StockHomeState
+import com.ourcx.kuiklystock.domain.StockQuote
 
 class StockHomeController(
     private val stockRepository: StockRepository = InMemoryStockRepository(),
@@ -29,7 +31,7 @@ class StockHomeController(
         chatRepository = chatRepository,
         contextProvider = {
             ChatContext(
-                quotes = stockRepository.getQuotes().map { quote ->
+                quotes = (state.market.quotes as? LoadState.Content<List<StockQuote>>)?.value.orEmpty().map { quote ->
                     ChatQuoteContext(
                         symbol = quote.symbol,
                         name = quote.name,

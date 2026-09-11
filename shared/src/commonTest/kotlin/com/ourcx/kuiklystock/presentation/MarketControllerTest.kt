@@ -200,9 +200,8 @@ private class FakeStockRepository(
     private val quotes: List<StockQuote> = listOf(QUOTE),
     private val failure: Throwable? = null,
 ) : StockRepository {
-    override fun getQuotes(): List<StockQuote> {
-        failure?.let { throw it }
-        return quotes
+    override fun getQuotes(callback: (Result<List<StockQuote>>) -> Unit) {
+        callback(failure?.let(Result.Companion::failure) ?: Result.success(quotes))
     }
 
     override fun getQuote(symbol: String): StockQuote =

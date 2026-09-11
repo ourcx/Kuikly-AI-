@@ -17,6 +17,7 @@ import org.json.JSONObject
 import java.io.InputStream
 import java.net.SocketTimeoutException
 import java.net.URL
+import java.nio.charset.Charset
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.concurrent.Executors
@@ -54,57 +55,106 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
                 val data = Date(paramJSON.optLong("timeStamp"))
                 SimpleDateFormat(paramJSON.optString("format")).format(data)
             }
-            "isWorkBuddyConfigured" -> workBuddyProxyUrl()?.let { true } ?: false
-            "getWorkBuddyProxyUrl" -> workBuddyProxyUrl()?.toString().orEmpty()
-            "saveWorkBuddyProxyUrl" -> saveWorkBuddyProxyUrl(params)
-            "clearWorkBuddyProxyUrl" -> {
-                preferences.edit().remove(PREF_WORK_BUDDY_PROXY_URL).apply()
+            "isOpenAiConfigured" -> openAiProxyUrl()?.let { true } ?: false
+            "getOpenAiProxyUrl" -> openAiProxyUrl()?.toString().orEmpty()
+            "getOpenAiModel" -> BuildConfig.OPENAI_MODEL
+            "saveOpenAiProxyUrl" -> saveOpenAiProxyUrl(params)
+            "clearOpenAiProxyUrl" -> {
+                preferences.edit().remove(PREF_OPENAI_PROXY_URL).apply()
                 true
             }
-            "requestWorkBuddy" -> {
-                requestWorkBuddy(params, callback)
+            "requestOpenAi" -> {
+                requestOpenAi(params, callback)
+                null
+            }
+            "requestTencentQuotes" -> {
+                requestTencentQuotes(params, callback)
                 null
             }
             else -> callback?.invoke(mapOf("code" to -1, "message" to "Method not found"))
         }
     }
 
-    private fun requestWorkBuddy(params: String?, callback: KuiklyRenderCallback?) {
-        val proxyUrl = workBuddyProxyUrl()
+    private fun requestOpenAi(params: String?, callback: KuiklyRenderCallback?) {
+        val proxyUrl = openAiProxyUrl()
         if (proxyUrl == null) {
-            callbackOnMainThread(callback, failureResponse("WorkBuddy HTTPS proxy is not configured"))
+            callbackOnMainThread(callback, failureResponse("OpenAI HTTPS 代理尚未配置"))
             return
         }
 
         val payload = runCatching {
-            JSONObject(params ?: "{}").optString(WORK_BUDDY_PAYLOAD).takeIf { it.isNotBlank() }
-                ?: throw IllegalArgumentException("WorkBuddy request payload is missing")
+            JSONObject(params ?: "{}").optString(OPENAI_PAYLOAD).takeIf { it.isNotBlank() }
+                ?: throw IllegalArgumentException("OpenAI 请求内容为空")
         }.getOrElse { error ->
-            callbackOnMainThread(callback, failureResponse(error.message ?: "Invalid WorkBuddy request"))
+            callbackOnMainThread(callback, failureResponse(error.message ?: "OpenAI 请求无效"))
             return
         }
 
-        workBuddyExecutor.execute {
-            val response = runCatching { postWorkBuddyRequest(proxyUrl, payload) }
+        networkExecutor.execute {
+            val response = runCatching { postOpenAiRequest(proxyUrl, payload) }
                 .fold(
                     onSuccess = { successResponse(it) },
-                    onFailure = { failureResponse(readableNetworkError(it)) },
+                    onFailure = { failureResponse(readableOpenAiError(it)) },
                 )
             callbackOnMainThread(callback, response)
         }
     }
 
-    private fun saveWorkBuddyProxyUrl(params: String?): Any {
-        val rawUrl = runCatching { JSONObject(params ?: "{}").optString(WORK_BUDDY_PROXY_URL) }
+    private fun requestTencentQuotes(params: String?, callback: KuiklyRenderCallback?) {
+        val codes = runCatching {
+            val values = JSONObject(params ?: "{}").getJSONArray(TENCENT_STOCK_CODES)
+            buildList {
+                for (index in 0 until values.length()) {
+                    val code = values.optString(index)
+                    if (STOCK_CODE_PATTERN.matches(code)) add(code)
+                }
+            }.takeIf { it.isNotEmpty() } ?: throw IllegalArgumentException("股票代码不能为空")
+        }.getOrElse { error ->
+            callbackOnMainThread(callback, failureResponse(error.message ?: "股票代码无效"))
+            return
+        }
+
+        networkExecutor.execute {
+            val response = runCatching { getTencentQuotes(codes) }
+                .fold(
+                    onSuccess = { successResponse(it) },
+                    onFailure = { failureResponse(readableTencentError(it)) },
+                )
+            callbackOnMainThread(callback, response)
+        }
+    }
+
+    private fun getTencentQuotes(codes: List<String>): String {
+        val connection = URL("$TENCENT_STOCK_ENDPOINT${codes.joinToString(",")}")
+            .openConnection() as HttpsURLConnection
+        return try {
+            connection.requestMethod = "GET"
+            connection.connectTimeout = CONNECT_TIMEOUT_MILLIS
+            connection.readTimeout = STOCK_READ_TIMEOUT_MILLIS
+            connection.setRequestProperty("Accept", "text/plain")
+            connection.setRequestProperty("User-Agent", TENCENT_USER_AGENT)
+            val statusCode = connection.responseCode
+            if (statusCode !in 200..299) throw TencentStockHttpException(statusCode)
+            connection.inputStream.bufferedReader(TENCENT_CHARSET).use { reader ->
+                reader.readText().takeIf(String::isNotBlank)
+                    ?: throw IllegalStateException("腾讯行情返回为空")
+            }
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun saveOpenAiProxyUrl(params: String?): Any {
+        val rawUrl = runCatching { JSONObject(params ?: "{}").optString(OPENAI_PROXY_URL) }
             .getOrDefault("")
             .trim()
         val validatedUrl = validateProxyUrl(rawUrl)
             ?: return "请输入有效的 HTTPS 服务地址"
-        preferences.edit().putString(PREF_WORK_BUDDY_PROXY_URL, validatedUrl.toString()).apply()
+        preferences.edit().putString(PREF_OPENAI_PROXY_URL, validatedUrl.toString()).apply()
         return true
     }
 
-    private fun postWorkBuddyRequest(proxyUrl: URL, payload: String): String {
+    private fun postOpenAiRequest(proxyUrl: URL, payload: String): String {
         val connection = proxyUrl.openConnection() as HttpsURLConnection
         return try {
             connection.requestMethod = "POST"
@@ -120,11 +170,11 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
             val statusCode = connection.responseCode
             if (statusCode !in 200..299) {
                 val detail = readLimited(connection.errorStream, MAX_ERROR_BODY_CHARS)
-                throw WorkBuddyHttpException(statusCode, sanitizeErrorDetail(detail))
+                throw OpenAiHttpException(statusCode, sanitizeErrorDetail(detail))
             }
             val responseBody = readLimited(connection.inputStream, MAX_SUCCESS_BODY_CHARS + 1)
             if (responseBody.length > MAX_SUCCESS_BODY_CHARS) {
-                throw IllegalStateException("WorkBuddy proxy response is too large")
+                throw IllegalStateException("OpenAI 代理响应过大")
             }
             responseBody
         } finally {
@@ -143,19 +193,25 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
     private fun failureResponse(error: String): Map<String, Any> =
         mapOf(WORK_BUDDY_SUCCESS to false, WORK_BUDDY_ERROR to error)
 
-    private fun readableNetworkError(error: Throwable): String = when (error) {
-        is WorkBuddyHttpException -> buildString {
-            append("WorkBuddy proxy returned HTTP ")
+    private fun readableOpenAiError(error: Throwable): String = when (error) {
+        is OpenAiHttpException -> buildString {
+            append("OpenAI 代理返回 HTTP ")
             append(error.statusCode)
             if (error.safeDetail.isNotEmpty()) append(": ${error.safeDetail}")
         }
-        is SocketTimeoutException -> "WorkBuddy proxy request timed out"
-        else -> "Unable to reach WorkBuddy proxy"
+        is SocketTimeoutException -> "OpenAI 请求超时，请重试"
+        else -> "暂时无法连接 OpenAI 代理，请重试"
     }
 
-    private fun workBuddyProxyUrl(): URL? {
-        val runtimeUrl = preferences.getString(PREF_WORK_BUDDY_PROXY_URL, null).orEmpty()
-        return validateProxyUrl(runtimeUrl) ?: validateProxyUrl(BuildConfig.WORKBUDDY_PROXY_URL)
+    private fun readableTencentError(error: Throwable): String = when (error) {
+        is TencentStockHttpException -> "腾讯行情服务返回 HTTP ${error.statusCode}"
+        is SocketTimeoutException -> "腾讯行情请求超时，请重试"
+        else -> "暂时无法连接腾讯行情服务，请重试"
+    }
+
+    private fun openAiProxyUrl(): URL? {
+        val runtimeUrl = preferences.getString(PREF_OPENAI_PROXY_URL, null).orEmpty()
+        return validateProxyUrl(runtimeUrl) ?: validateProxyUrl(BuildConfig.OPENAI_PROXY_URL)
     }
 
     private fun validateProxyUrl(rawUrl: String): URL? {
@@ -203,21 +259,27 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
     companion object {
         const val MODULE_NAME = "HRBridgeModule"
 
-        private const val WORK_BUDDY_PAYLOAD = "payload"
-        private const val WORK_BUDDY_PROXY_URL = "url"
+        private const val OPENAI_PAYLOAD = "payload"
+        private const val OPENAI_PROXY_URL = "url"
         private const val WORK_BUDDY_SUCCESS = "success"
         private const val WORK_BUDDY_DATA = "data"
         private const val WORK_BUDDY_ERROR = "error"
         private const val CONNECT_TIMEOUT_MILLIS = 10_000
         private const val READ_TIMEOUT_MILLIS = 30_000
+        private const val STOCK_READ_TIMEOUT_MILLIS = 10_000
         private const val MAX_ERROR_BODY_CHARS = 4_096
         private const val MAX_SUCCESS_BODY_CHARS = 1_000_000
         private const val MAX_SAFE_ERROR_CHARS = 300
         private const val PREFS_NAME = "research_service"
-        private const val PREF_WORK_BUDDY_PROXY_URL = "work_buddy_proxy_url"
+        private const val PREF_OPENAI_PROXY_URL = "openai_proxy_url"
+        private const val TENCENT_STOCK_CODES = "codes"
+        private const val TENCENT_STOCK_ENDPOINT = "https://qt.gtimg.cn/q="
+        private const val TENCENT_USER_AGENT = "Mozilla/5.0 KuiklyStock/1.0"
 
-        private val workBuddyExecutor = Executors.newSingleThreadExecutor()
+        private val networkExecutor = Executors.newFixedThreadPool(2)
         private val mainHandler = Handler(Looper.getMainLooper())
+        private val TENCENT_CHARSET = Charset.forName("GB18030")
+        private val STOCK_CODE_PATTERN = Regex("^(sh|sz|hk|us)[A-Za-z0-9.]{1,12}$")
         private val BEARER_PATTERN = Regex("(?i)Bearer\\s+[^\\s,;]+")
         private val SECRET_PATTERN = Regex(
             """(?i)"?(authorization|access[_-]?token|refresh[_-]?token|token|api[_-]?key|secret|password)"?\s*[:=]\s*"?[^\s,;"]+""",
@@ -230,7 +292,9 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
     }
 }
 
-private class WorkBuddyHttpException(
+private class OpenAiHttpException(
     val statusCode: Int,
     val safeDetail: String,
 ) : Exception()
+
+private class TencentStockHttpException(val statusCode: Int) : Exception()

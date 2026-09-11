@@ -13,6 +13,7 @@ data class StockQuote(
     val previousClose: Double,
     val volume: Long,
     val trendPoints: List<Double>,
+    val updatedAt: String = "",
 )
 
 data class StockInsight(

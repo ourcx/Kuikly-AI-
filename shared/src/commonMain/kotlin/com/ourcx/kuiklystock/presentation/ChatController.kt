@@ -4,7 +4,7 @@ import com.ourcx.kuiklystock.data.ChatRepository
 import com.ourcx.kuiklystock.data.InMemoryChatRepository
 import com.ourcx.kuiklystock.data.ResilientChatRepository
 import com.ourcx.kuiklystock.data.ResearchServiceConfiguration
-import com.ourcx.kuiklystock.data.WorkBuddyChatRepository
+import com.ourcx.kuiklystock.data.OpenAiChatRepository
 import com.ourcx.kuiklystock.domain.ChatContext
 import com.ourcx.kuiklystock.domain.ChatContentBlock
 import com.ourcx.kuiklystock.domain.ChatMessage
@@ -235,12 +235,12 @@ class ChatController(
     )
 
     private fun initialConnectionStatus(): WorkBuddyConnectionStatus {
-        val workBuddyConfigured = serviceConfiguration?.isConfigured ?: when (chatRepository) {
+        val openAiConfigured = serviceConfiguration?.isConfigured ?: when (chatRepository) {
             is ResilientChatRepository -> chatRepository.isRemoteConfigured
             is InMemoryChatRepository -> false
             else -> chatRepository.isConfigured
         }
-        return if (workBuddyConfigured) {
+        return if (openAiConfigured) {
             WorkBuddyConnectionStatus.AVAILABLE
         } else {
             WorkBuddyConnectionStatus.UNCONFIGURED
@@ -249,13 +249,13 @@ class ChatController(
 
     private fun initialProvider(): ChatProvider = when (chatRepository) {
         is InMemoryChatRepository, is ResilientChatRepository -> ChatProvider.LOCAL
-        is WorkBuddyChatRepository -> ChatProvider.WORKBUDDY
-        else -> if (chatRepository.isConfigured) ChatProvider.WORKBUDDY else ChatProvider.LOCAL
+        is OpenAiChatRepository -> ChatProvider.OPENAI
+        else -> if (chatRepository.isConfigured) ChatProvider.OPENAI else ChatProvider.LOCAL
     }
 
     private fun com.ourcx.kuiklystock.domain.ChatResponse.connectionStatus(): WorkBuddyConnectionStatus =
         when {
-            provider == ChatProvider.WORKBUDDY -> WorkBuddyConnectionStatus.AVAILABLE
+            provider == ChatProvider.OPENAI -> WorkBuddyConnectionStatus.AVAILABLE
             serviceConfiguration?.isConfigured == true -> WorkBuddyConnectionStatus.ERROR
             else -> WorkBuddyConnectionStatus.UNCONFIGURED
         }
@@ -271,4 +271,4 @@ class ChatController(
 private fun List<ChatMessage>.replaceMessage(replacement: ChatMessage): List<ChatMessage> =
     map { message -> if (message.id == replacement.id) replacement else message }
 
-private const val UNCONFIGURED_MESSAGE = "WorkBuddy 服务尚未配置，请先配置 HTTPS 代理地址"
+private const val UNCONFIGURED_MESSAGE = "OpenAI 服务尚未配置，请先配置 HTTPS 代理地址"

@@ -12,7 +12,12 @@ class InMemoryRepositoriesTest {
     fun stockRepositoryReturnsStableFixturesAndNormalizesSymbols() {
         val repository = InMemoryStockRepository()
 
-        assertEquals(listOf("00700", "09988", "600519", "AAPL", "TSLA"), repository.getQuotes().map { it.symbol })
+        var quotes: Result<List<com.ourcx.kuiklystock.domain.StockQuote>>? = null
+        repository.getQuotes { quotes = it }
+        assertEquals(
+            listOf("00700", "09988", "600519", "AAPL", "TSLA"),
+            requireNotNull(quotes).getOrThrow().map { it.symbol },
+        )
         assertEquals("腾讯控股", repository.getQuote(" 00700 " ).name)
         assertEquals("AAPL", repository.getInsight("aapl").symbol)
     }

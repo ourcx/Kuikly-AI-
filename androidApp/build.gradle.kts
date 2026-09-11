@@ -37,8 +37,13 @@ android {
         versionName = "1.0"
         buildConfigField(
             "String",
-            "WORKBUDDY_PROXY_URL",
-            System.getenv("WORKBUDDY_PROXY_URL").orEmpty().toBuildConfigStringLiteral(),
+            "OPENAI_PROXY_URL",
+            System.getenv("OPENAI_PROXY_URL").orEmpty().toBuildConfigStringLiteral(),
+        )
+        buildConfigField(
+            "String",
+            "OPENAI_MODEL",
+            (System.getenv("OPENAI_MODEL") ?: "gpt-5.6").toBuildConfigStringLiteral(),
         )
     }
     buildFeatures {

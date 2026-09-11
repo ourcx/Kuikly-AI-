@@ -68,19 +68,20 @@ internal class BridgeModule : Module() {
         return syncCallNativeMethod(DATE_FORMATTER, params, null)
     }
 
-    fun isWorkBuddyConfigured(): Boolean {
-        return when (syncCallNativeMethod(IS_WORK_BUDDY_CONFIGURED, null, null).trim().lowercase()) {
+    fun isOpenAiConfigured(): Boolean {
+        return when (syncCallNativeMethod(IS_OPENAI_CONFIGURED, null, null).trim().lowercase()) {
             "true", "1" -> true
             else -> false
         }
     }
 
-    fun workBuddyProxyUrl(): String =
-        syncCallNativeMethod(GET_WORK_BUDDY_PROXY_URL, null, null)
+    fun openAiProxyUrl(): String = syncCallNativeMethod(GET_OPENAI_PROXY_URL, null, null)
 
-    fun saveWorkBuddyProxyUrl(url: String): Result<Unit> {
-        val params = JSONObject().put(WORK_BUDDY_PROXY_URL, url)
-        val response = syncCallNativeMethod(SAVE_WORK_BUDDY_PROXY_URL, params, null)
+    fun openAiModel(): String = syncCallNativeMethod(GET_OPENAI_MODEL, null, null)
+
+    fun saveOpenAiProxyUrl(url: String): Result<Unit> {
+        val params = JSONObject().put(OPENAI_PROXY_URL, url)
+        val response = syncCallNativeMethod(SAVE_OPENAI_PROXY_URL, params, null)
         return if (response == "true") {
             Result.success(Unit)
         } else {
@@ -88,31 +89,41 @@ internal class BridgeModule : Module() {
         }
     }
 
-    fun clearWorkBuddyProxyUrl() {
-        syncCallNativeMethod(CLEAR_WORK_BUDDY_PROXY_URL, null, null)
+    fun clearOpenAiProxyUrl() {
+        syncCallNativeMethod(CLEAR_OPENAI_PROXY_URL, null, null)
     }
 
-    fun requestWorkBuddy(payload: String, callback: (Result<String>) -> Unit) {
-        val params = JSONObject().put(WORK_BUDDY_PAYLOAD, payload)
-        callNativeMethod(REQUEST_WORK_BUDDY, params) { response ->
+    fun requestOpenAi(payload: String, callback: (Result<String>) -> Unit) {
+        val params = JSONObject().put(OPENAI_PAYLOAD, payload)
+        callNativeMethod(REQUEST_OPENAI, params) { response ->
             callback(
-                response?.let(::parseWorkBuddyResponse)
-                    ?: Result.failure(IllegalStateException(WORK_BUDDY_EMPTY_RESPONSE_ERROR)),
+                response?.let(::parseNativeResponse)
+                    ?: Result.failure(IllegalStateException(OPENAI_EMPTY_RESPONSE_ERROR)),
             )
         }
     }
 
-    private fun parseWorkBuddyResponse(response: JSONObject): Result<String> =
+    fun requestTencentQuotes(codes: List<String>, callback: (Result<String>) -> Unit) {
+        val params = JSONObject().put(TENCENT_STOCK_CODES, JSONArray(codes))
+        callNativeMethod(REQUEST_TENCENT_QUOTES, params) { response ->
+            callback(
+                response?.let(::parseNativeResponse)
+                    ?: Result.failure(IllegalStateException(TENCENT_STOCK_EMPTY_RESPONSE_ERROR)),
+            )
+        }
+    }
+
+    private fun parseNativeResponse(response: JSONObject): Result<String> =
         runCatching {
             if (!response.has(WORK_BUDDY_SUCCESS)) {
-                throw IllegalStateException("WorkBuddy response is missing the success field")
+                throw IllegalStateException("Native response is missing the success field")
             }
             if (!response.optBoolean(WORK_BUDDY_SUCCESS, false)) {
-                val message = response.optString(WORK_BUDDY_ERROR, WORK_BUDDY_DEFAULT_ERROR)
-                throw IllegalStateException(message.ifEmpty { WORK_BUDDY_DEFAULT_ERROR })
+                val message = response.optString(RESPONSE_ERROR, DEFAULT_REQUEST_ERROR)
+                throw IllegalStateException(message.ifEmpty { DEFAULT_REQUEST_ERROR })
             }
             if (!response.has(WORK_BUDDY_DATA)) {
-                throw IllegalStateException("WorkBuddy response is missing the data field")
+                throw IllegalStateException("Native response is missing the data field")
             }
             response.optString(WORK_BUDDY_DATA)
         }
@@ -133,19 +144,23 @@ internal class BridgeModule : Module() {
         const val SSO_REQUEST = "ssoRequest"
         const val CURRENT_TIMESTAMP = "currentTimestamp"
         const val DATE_FORMATTER = "dateFormatter"
-        const val IS_WORK_BUDDY_CONFIGURED = "isWorkBuddyConfigured"
-        const val GET_WORK_BUDDY_PROXY_URL = "getWorkBuddyProxyUrl"
-        const val SAVE_WORK_BUDDY_PROXY_URL = "saveWorkBuddyProxyUrl"
-        const val CLEAR_WORK_BUDDY_PROXY_URL = "clearWorkBuddyProxyUrl"
-        const val REQUEST_WORK_BUDDY = "requestWorkBuddy"
+        const val IS_OPENAI_CONFIGURED = "isOpenAiConfigured"
+        const val GET_OPENAI_PROXY_URL = "getOpenAiProxyUrl"
+        const val GET_OPENAI_MODEL = "getOpenAiModel"
+        const val SAVE_OPENAI_PROXY_URL = "saveOpenAiProxyUrl"
+        const val CLEAR_OPENAI_PROXY_URL = "clearOpenAiProxyUrl"
+        const val REQUEST_OPENAI = "requestOpenAi"
+        const val REQUEST_TENCENT_QUOTES = "requestTencentQuotes"
 
-        private const val WORK_BUDDY_PAYLOAD = "payload"
-        private const val WORK_BUDDY_PROXY_URL = "url"
+        private const val OPENAI_PAYLOAD = "payload"
+        private const val TENCENT_STOCK_CODES = "codes"
+        private const val OPENAI_PROXY_URL = "url"
         private const val WORK_BUDDY_SUCCESS = "success"
         private const val WORK_BUDDY_DATA = "data"
-        private const val WORK_BUDDY_ERROR = "error"
-        private const val WORK_BUDDY_DEFAULT_ERROR = "WorkBuddy request failed"
-        private const val WORK_BUDDY_EMPTY_RESPONSE_ERROR = "WorkBuddy response is empty"
+        private const val RESPONSE_ERROR = "error"
+        private const val DEFAULT_REQUEST_ERROR = "请求失败"
+        private const val OPENAI_EMPTY_RESPONSE_ERROR = "OpenAI 响应为空"
+        private const val TENCENT_STOCK_EMPTY_RESPONSE_ERROR = "腾讯行情请求未返回结果"
         private const val INVALID_WORK_BUDDY_PROXY_URL = "请输入有效的 HTTPS 服务地址"
     }
 }
