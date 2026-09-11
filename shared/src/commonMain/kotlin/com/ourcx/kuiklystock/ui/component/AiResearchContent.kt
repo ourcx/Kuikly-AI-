@@ -35,6 +35,8 @@ fun ViewContainer<*, *>.aiResearchContentSlot(
     onClear: () -> Unit,
     onToggleServiceSettings: () -> Unit,
     onUpdateServiceUrl: (String) -> Unit,
+    onUpdateServiceToken: (String) -> Unit,
+    onUpdateServiceModel: (String) -> Unit,
     onSaveServiceUrl: () -> Unit,
     onClearServiceUrl: () -> Unit,
     onSelectStock: (String) -> Unit,
@@ -56,6 +58,8 @@ fun ViewContainer<*, *>.aiResearchContentSlot(
             serviceSettings(
                 state = state,
                 onUpdateServiceUrl = onUpdateServiceUrl,
+                onUpdateServiceToken = onUpdateServiceToken,
+                onUpdateServiceModel = onUpdateServiceModel,
                 onSaveServiceUrl = onSaveServiceUrl,
                 onClearServiceUrl = onClearServiceUrl,
             )
@@ -157,12 +161,14 @@ private fun WorkBuddyConnectionStatus.description(provider: ChatProvider): Strin
     } else {
         "OpenAI 服务已配置，可以开始分析"
     }
-    WorkBuddyConnectionStatus.UNCONFIGURED -> "配置 OpenAI 代理后即可开始分析"
+    WorkBuddyConnectionStatus.UNCONFIGURED -> "离线演示可用 · 配置 OpenAI 兼容服务可启用在线分析"
 }
 
 private fun ViewContainer<*, *>.serviceSettings(
     state: ChatState,
     onUpdateServiceUrl: (String) -> Unit,
+    onUpdateServiceToken: (String) -> Unit,
+    onUpdateServiceModel: (String) -> Unit,
     onSaveServiceUrl: () -> Unit,
     onClearServiceUrl: () -> Unit,
 ) {
@@ -173,7 +179,7 @@ private fun ViewContainer<*, *>.serviceSettings(
         }
         Text {
             attr {
-                text("在线服务地址")
+                text("OpenAI 兼容服务")
                 fontSize(DesignTokens.Typography.BODY)
                 fontWeightBold()
                 color(DesignTokens.Colors.onSurface)
@@ -181,7 +187,7 @@ private fun ViewContainer<*, *>.serviceSettings(
         }
         Text {
             attr {
-                text("填写 OpenAI Responses API 的 HTTPS 代理地址，密钥由服务端保管。")
+                text("按 Chat Completions 格式请求；支持 HTTPS，局域网地址可用 HTTP。Token 不会回显完整值。")
                 fontSize(DesignTokens.Typography.CAPTION)
                 color(DesignTokens.Colors.onSurfaceMuted)
                 marginTop(DesignTokens.Spacing.XXS)
@@ -199,7 +205,7 @@ private fun ViewContainer<*, *>.serviceSettings(
                 attr {
                     flex(DesignTokens.Size.FILL)
                     text(state.serviceUrlDraft)
-                    placeholder("https://your-proxy.example.com/v1/responses")
+                    placeholder("Base URL，例如 https://api.openai.com/v1")
                     placeholderColor(DesignTokens.Colors.onSurfaceMuted)
                     color(DesignTokens.Colors.onSurface)
                     fontSize(DesignTokens.Typography.BODY)
@@ -208,6 +214,17 @@ private fun ViewContainer<*, *>.serviceSettings(
                 event { textDidChange { params -> onUpdateServiceUrl(params.text) } }
             }
         }
+        serviceInput(
+            value = state.serviceTokenDraft,
+            placeholder = if (state.serviceTokenConfigured) "Token 已保存，留空保持不变" else "API Token",
+            password = true,
+            onChange = onUpdateServiceToken,
+        )
+        serviceInput(
+            value = state.serviceModelDraft,
+            placeholder = "Model，例如 gpt-4.1-mini",
+            onChange = onUpdateServiceModel,
+        )
         state.serviceSettingsError?.let { error ->
             Text {
                 attr {
@@ -243,6 +260,36 @@ private fun ViewContainer<*, *>.serviceSettings(
                     event { click { onClearServiceUrl() } }
                 }
             }
+        }
+    }
+}
+
+private fun ViewContainer<*, *>.serviceInput(
+    value: String,
+    placeholder: String,
+    password: Boolean = false,
+    onChange: (String) -> Unit,
+) {
+    View {
+        attr {
+            height(DesignTokens.Size.CHAT_INPUT_HEIGHT)
+            padding(left = DesignTokens.Spacing.SM, right = DesignTokens.Spacing.SM)
+            borderRadius(DesignTokens.Radius.MD)
+            backgroundColor(DesignTokens.Colors.surfaceAlt)
+            marginTop(DesignTokens.Spacing.SM)
+        }
+        Input {
+            attr {
+                flex(DesignTokens.Size.FILL)
+                text(value)
+                placeholder(placeholder)
+                placeholderColor(DesignTokens.Colors.onSurfaceMuted)
+                color(DesignTokens.Colors.onSurface)
+                fontSize(DesignTokens.Typography.BODY)
+                backgroundColor(DesignTokens.Colors.surfaceAlt)
+                if (password) keyboardTypePassword()
+            }
+            event { textDidChange { params -> onChange(params.text) } }
         }
     }
 }
@@ -409,7 +456,15 @@ private fun ViewContainer<*, *>.chatContentBlock(
         }
         is ChatContentBlock.Trend -> {
             val quote = marketState.findQuote(block.symbol)
-            if (quote == null) missingQuote(block.symbol) else sparkline(quote.trendPoints, quote.change)
+            if (quote == null) missingQuote(block.symbol) else sparkline(quote)
+        }
+        is ChatContentBlock.Error -> Text {
+            attr {
+                text(block.message)
+                fontSize(DesignTokens.Typography.BODY)
+                color(DesignTokens.Colors.danger)
+                marginBottom(DesignTokens.Spacing.XS)
+            }
         }
     }
 }
@@ -448,7 +503,7 @@ private fun ViewContainer<*, *>.chatRetryAction(onRetry: () -> Unit) {
             marginTop(DesignTokens.Spacing.SM)
         }
         event { click { onRetry() } }
-        chatStatusLabel("生成失败，点击重新连接并重试", failed = true)
+        chatStatusLabel("生成失败，点击重试本次问题", failed = true)
     }
 }
 

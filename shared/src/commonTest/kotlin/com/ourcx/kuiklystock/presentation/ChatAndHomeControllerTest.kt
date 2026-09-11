@@ -4,6 +4,7 @@ import com.ourcx.kuiklystock.data.ChatRepository
 import com.ourcx.kuiklystock.data.InMemoryChatRepository
 import com.ourcx.kuiklystock.data.InMemoryStockRepository
 import com.ourcx.kuiklystock.data.ResearchServiceConfiguration
+import com.ourcx.kuiklystock.data.ResearchServiceSettings
 import com.ourcx.kuiklystock.data.StockRepository
 import com.ourcx.kuiklystock.domain.AppDestination
 import com.ourcx.kuiklystock.domain.AppTab
@@ -70,6 +71,7 @@ class ChatAndHomeControllerTest {
         controller.updateDraft("Analyze Tencent")
         controller.send()
         assertEquals(ChatMessageStatus.FAILED, controller.state.messages.last().status)
+        assertIs<ChatContentBlock.Error>(controller.state.messages.last().blocks.single())
         assertEquals("Temporary failure", controller.state.error)
 
         controller.retry()
@@ -272,9 +274,13 @@ class ChatAndHomeControllerTest {
 
         controller.toggleServiceSettings()
         controller.updateServiceUrl("https://proxy.example.com/chat")
+        controller.updateServiceToken("sk-test")
+        controller.updateServiceModel("gpt-test")
         controller.saveServiceUrl()
 
         assertEquals("https://proxy.example.com/chat", configuration.url)
+        assertEquals("sk-test", configuration.token)
+        assertEquals("gpt-test", configuration.model)
         assertFalse(controller.state.serviceSettingsVisible)
         assertEquals(WorkBuddyConnectionStatus.AVAILABLE, controller.state.connectionStatus)
 
@@ -294,10 +300,12 @@ class ChatAndHomeControllerTest {
 
         controller.toggleServiceSettings()
         controller.updateServiceUrl("http://unsafe.example.com")
+        controller.updateServiceToken("sk-test")
+        controller.updateServiceModel("gpt-test")
         controller.saveServiceUrl()
 
         assertTrue(controller.state.serviceSettingsVisible)
-        assertEquals("请输入有效的 HTTPS 服务地址", controller.state.serviceSettingsError)
+        assertEquals("请输入 HTTPS 地址，或本地网络 HTTP 地址", controller.state.serviceSettingsError)
         assertEquals("", configuration.url)
     }
 
@@ -305,6 +313,8 @@ class ChatAndHomeControllerTest {
     fun configuredServiceLocalFallbackIsReportedAsRemoteError() {
         val configuration = FakeServiceConfiguration().apply {
             url = "https://proxy.example.com/chat"
+            token = "sk-test"
+            model = "gpt-test"
         }
         val controller = ChatController(
             chatRepository = InMemoryChatRepository(),
@@ -321,21 +331,30 @@ class ChatAndHomeControllerTest {
 
 private class FakeServiceConfiguration : ResearchServiceConfiguration {
     var url: String = ""
+    var token: String = ""
+    var model: String = ""
     override val isConfigured: Boolean
-        get() = url.isNotEmpty()
+        get() = url.isNotEmpty() && token.isNotEmpty() && model.isNotEmpty()
 
-    override fun currentUrl(): String = url
+    override fun current(): ResearchServiceSettings = ResearchServiceSettings(url, model, token.isNotEmpty())
 
-    override fun save(url: String): Result<Unit> {
+    override fun save(baseUrl: String, token: String, model: String): Result<Unit> {
+        val url = baseUrl
         if (!url.startsWith("https://")) {
-            return Result.failure(IllegalArgumentException("请输入有效的 HTTPS 服务地址"))
+            return Result.failure(IllegalArgumentException("请输入 HTTPS 地址，或本地网络 HTTP 地址"))
         }
+        if (token.isEmpty() && this.token.isEmpty()) return Result.failure(IllegalArgumentException("请输入 API Token"))
+        if (model.isEmpty()) return Result.failure(IllegalArgumentException("请输入 Model"))
         this.url = url
+        if (token.isNotEmpty()) this.token = token
+        this.model = model
         return Result.success(Unit)
     }
 
     override fun clear() {
         url = ""
+        token = ""
+        model = ""
     }
 }
 

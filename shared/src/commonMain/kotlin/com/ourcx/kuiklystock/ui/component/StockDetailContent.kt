@@ -13,6 +13,7 @@ import com.tencent.kuikly.core.views.View
 fun ViewContainer<*, *>.stockDetailContentSlot(
     state: StockDetailState?,
     onBack: () -> Unit,
+    onRetryInsight: () -> Unit,
 ) {
     View {
         attr {
@@ -26,7 +27,7 @@ fun ViewContainer<*, *>.stockDetailContentSlot(
             LoadState.Loading -> detailStatus("正在加载详情", "正在获取股票行情与风险信息…")
             LoadState.Empty -> detailStatus("暂无详情", "当前股票没有可展示的详情数据。")
             is LoadState.Error -> detailStatus("详情加载失败", content.message)
-            is LoadState.Content -> detailContent(content.value)
+            is LoadState.Content -> detailContent(content.value, onRetryInsight)
         }
     }
 }
@@ -54,18 +55,23 @@ private fun ViewContainer<*, *>.detailBackButton(onBack: () -> Unit) {
         }
     }
 }
-private fun ViewContainer<*, *>.detailContent(content: StockDetailContent) {
+private fun ViewContainer<*, *>.detailContent(content: StockDetailContent, onRetryInsight: () -> Unit) {
     List {
         attr {
             flex(DesignTokens.Size.FILL)
             flexDirectionColumn()
-            padding(DesignTokens.Spacing.MD)
         }
-        stockCard(content.quote)
-        metricGrid(content.quote)
-        sparkline(content.quote.trendPoints, content.quote.change)
-        stockInsightSection(content.insight)
-        disclaimer()
+        View {
+            attr {
+                // Kuikly 2.16 的 List 会把 padding 转交给内部 content，横向 padding 会导致右侧重复缩进。
+                padding(DesignTokens.Spacing.MD)
+            }
+            stockCard(content.quote)
+            metricGrid(content.quote)
+            sparkline(content.quote)
+            stockInsightSection(content.insight, onRetryInsight)
+            disclaimer()
+        }
     }
 }
 

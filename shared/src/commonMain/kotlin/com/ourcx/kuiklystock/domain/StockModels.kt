@@ -14,7 +14,13 @@ data class StockQuote(
     val volume: Long,
     val trendPoints: List<Double>,
     val updatedAt: String = "",
+    val dataSource: QuoteDataSource = QuoteDataSource.FIXTURE,
 )
+
+enum class QuoteDataSource(val label: String) {
+    TENCENT("腾讯实时行情"),
+    FIXTURE("离线演示数据"),
+}
 
 data class StockInsight(
     val symbol: String,
@@ -23,4 +29,5 @@ data class StockInsight(
     val signals: List<String>,
     val risks: List<String>,
     val updatedAt: String,
+    val provider: ChatProvider = ChatProvider.LOCAL,
 )

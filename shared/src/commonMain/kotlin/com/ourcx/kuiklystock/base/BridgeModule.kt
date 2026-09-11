@@ -79,9 +79,15 @@ internal class BridgeModule : Module() {
 
     fun openAiModel(): String = syncCallNativeMethod(GET_OPENAI_MODEL, null, null)
 
-    fun saveOpenAiProxyUrl(url: String): Result<Unit> {
-        val params = JSONObject().put(OPENAI_PROXY_URL, url)
-        val response = syncCallNativeMethod(SAVE_OPENAI_PROXY_URL, params, null)
+    fun hasOpenAiToken(): Boolean = syncCallNativeMethod(HAS_OPENAI_TOKEN, null, null)
+        .trim().lowercase() in setOf("true", "1")
+
+    fun saveOpenAiConfiguration(baseUrl: String, token: String, model: String): Result<Unit> {
+        val params = JSONObject()
+            .put(OPENAI_PROXY_URL, baseUrl)
+            .put(OPENAI_TOKEN, token)
+            .put(OPENAI_MODEL, model)
+        val response = syncCallNativeMethod(SAVE_OPENAI_CONFIGURATION, params, null)
         return if (response == "true") {
             Result.success(Unit)
         } else {
@@ -89,8 +95,8 @@ internal class BridgeModule : Module() {
         }
     }
 
-    fun clearOpenAiProxyUrl() {
-        syncCallNativeMethod(CLEAR_OPENAI_PROXY_URL, null, null)
+    fun clearOpenAiConfiguration() {
+        syncCallNativeMethod(CLEAR_OPENAI_CONFIGURATION, null, null)
     }
 
     fun requestOpenAi(payload: String, callback: (Result<String>) -> Unit) {
@@ -150,20 +156,23 @@ internal class BridgeModule : Module() {
         const val IS_OPENAI_CONFIGURED = "isOpenAiConfigured"
         const val GET_OPENAI_PROXY_URL = "getOpenAiProxyUrl"
         const val GET_OPENAI_MODEL = "getOpenAiModel"
-        const val SAVE_OPENAI_PROXY_URL = "saveOpenAiProxyUrl"
-        const val CLEAR_OPENAI_PROXY_URL = "clearOpenAiProxyUrl"
+        const val HAS_OPENAI_TOKEN = "hasOpenAiToken"
+        const val SAVE_OPENAI_CONFIGURATION = "saveOpenAiConfiguration"
+        const val CLEAR_OPENAI_CONFIGURATION = "clearOpenAiConfiguration"
         const val REQUEST_OPENAI = "requestOpenAi"
         const val REQUEST_TENCENT_QUOTES = "requestTencentQuotes"
 
         private const val OPENAI_PAYLOAD = "payload"
         private const val TENCENT_STOCK_CODES = "codes"
         private const val OPENAI_PROXY_URL = "url"
+        private const val OPENAI_TOKEN = "token"
+        private const val OPENAI_MODEL = "model"
         private const val WORK_BUDDY_SUCCESS = "success"
         private const val WORK_BUDDY_DATA = "data"
         private const val RESPONSE_ERROR = "error"
         private const val DEFAULT_REQUEST_ERROR = "请求失败"
         private const val OPENAI_EMPTY_RESPONSE_ERROR = "OpenAI 响应为空"
         private const val TENCENT_STOCK_EMPTY_RESPONSE_ERROR = "腾讯行情请求未返回结果"
-        private const val INVALID_WORK_BUDDY_PROXY_URL = "请输入有效的 HTTPS 服务地址"
+        private const val INVALID_WORK_BUDDY_PROXY_URL = "请输入 HTTPS 地址，或本地网络 HTTP 地址"
     }
 }

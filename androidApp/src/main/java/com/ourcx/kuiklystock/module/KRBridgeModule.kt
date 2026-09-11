@@ -17,6 +17,7 @@ import org.json.JSONObject
 import java.io.InputStream
 import java.net.SocketTimeoutException
 import java.net.URL
+import java.net.HttpURLConnection
 import java.nio.charset.Charset
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -55,12 +56,17 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
                 val data = Date(paramJSON.optLong("timeStamp"))
                 SimpleDateFormat(paramJSON.optString("format")).format(data)
             }
-            "isOpenAiConfigured" -> openAiProxyUrl()?.let { true } ?: false
+            "isOpenAiConfigured" -> openAiProxyUrl() != null && openAiToken().isNotEmpty() && openAiModel().isNotEmpty()
             "getOpenAiProxyUrl" -> openAiProxyUrl()?.toString().orEmpty()
-            "getOpenAiModel" -> BuildConfig.OPENAI_MODEL
-            "saveOpenAiProxyUrl" -> saveOpenAiProxyUrl(params)
-            "clearOpenAiProxyUrl" -> {
-                preferences.edit().remove(PREF_OPENAI_PROXY_URL).apply()
+            "getOpenAiModel" -> openAiModel()
+            "hasOpenAiToken" -> openAiToken().isNotEmpty()
+            "saveOpenAiConfiguration" -> saveOpenAiConfiguration(params)
+            "clearOpenAiConfiguration" -> {
+                preferences.edit()
+                    .remove(PREF_OPENAI_PROXY_URL)
+                    .remove(PREF_OPENAI_TOKEN)
+                    .remove(PREF_OPENAI_MODEL)
+                    .apply()
                 true
             }
             "requestOpenAi" -> {
@@ -76,9 +82,10 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
     }
 
     private fun requestOpenAi(params: String?, callback: KuiklyRenderCallback?) {
-        val proxyUrl = openAiProxyUrl()
-        if (proxyUrl == null) {
-            callbackOnMainThread(callback, failureResponse("OpenAI HTTPS 代理尚未配置"))
+        val baseUrl = openAiProxyUrl()
+        val token = openAiToken()
+        if (baseUrl == null || token.isEmpty() || openAiModel().isEmpty()) {
+            callbackOnMainThread(callback, failureResponse("OpenAI Base URL、Token 或 Model 尚未配置"))
             return
         }
 
@@ -91,7 +98,7 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
         }
 
         networkExecutor.execute {
-            val response = runCatching { postOpenAiRequest(proxyUrl, payload) }
+            val response = runCatching { postOpenAiRequest(chatCompletionsUrl(baseUrl), token, payload) }
                 .fold(
                     onSuccess = { successResponse(it) },
                     onFailure = { failureResponse(readableOpenAiError(it)) },
@@ -144,18 +151,27 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
         }
     }
 
-    private fun saveOpenAiProxyUrl(params: String?): Any {
-        val rawUrl = runCatching { JSONObject(params ?: "{}").optString(OPENAI_PROXY_URL) }
-            .getOrDefault("")
-            .trim()
+    private fun saveOpenAiConfiguration(params: String?): Any {
+        val json = runCatching { JSONObject(params ?: "{}") }.getOrElse { return "配置格式无效" }
+        val rawUrl = json.optString(OPENAI_PROXY_URL).trim()
         val validatedUrl = validateProxyUrl(rawUrl)
-            ?: return "请输入有效的 HTTPS 服务地址"
-        preferences.edit().putString(PREF_OPENAI_PROXY_URL, validatedUrl.toString()).apply()
+            ?: return INVALID_OPENAI_URL
+        val model = json.optString(OPENAI_MODEL).trim()
+        if (model.isEmpty()) return "请输入 Model"
+        val submittedToken = json.optString(OPENAI_TOKEN).trim()
+        val token = submittedToken.ifEmpty(::openAiToken)
+        if (token.isEmpty()) return "请输入 API Token"
+
+        val editor = preferences.edit()
+            .putString(PREF_OPENAI_PROXY_URL, validatedUrl.toString().trimEnd('/'))
+            .putString(PREF_OPENAI_MODEL, model)
+        if (submittedToken.isNotEmpty()) editor.putString(PREF_OPENAI_TOKEN, submittedToken)
+        editor.apply()
         return true
     }
 
-    private fun postOpenAiRequest(proxyUrl: URL, payload: String): String {
-        val connection = proxyUrl.openConnection() as HttpsURLConnection
+    private fun postOpenAiRequest(endpoint: URL, token: String, payload: String): String {
+        val connection = endpoint.openConnection() as HttpURLConnection
         return try {
             connection.requestMethod = "POST"
             connection.connectTimeout = CONNECT_TIMEOUT_MILLIS
@@ -163,6 +179,7 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
             connection.doOutput = true
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
             connection.setRequestProperty("Accept", "application/json")
+            connection.setRequestProperty("Authorization", "Bearer $token")
             connection.outputStream.use { output ->
                 output.write(payload.toByteArray(Charsets.UTF_8))
             }
@@ -174,7 +191,7 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
             }
             val responseBody = readLimited(connection.inputStream, MAX_SUCCESS_BODY_CHARS + 1)
             if (responseBody.length > MAX_SUCCESS_BODY_CHARS) {
-                throw IllegalStateException("OpenAI 代理响应过大")
+                throw IllegalStateException("OpenAI 服务响应过大")
             }
             responseBody
         } finally {
@@ -195,12 +212,12 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
 
     private fun readableOpenAiError(error: Throwable): String = when (error) {
         is OpenAiHttpException -> buildString {
-            append("OpenAI 代理返回 HTTP ")
+            append("OpenAI 服务返回 HTTP ")
             append(error.statusCode)
             if (error.safeDetail.isNotEmpty()) append(": ${error.safeDetail}")
         }
         is SocketTimeoutException -> "OpenAI 请求超时，请重试"
-        else -> "暂时无法连接 OpenAI 代理，请重试"
+        else -> "暂时无法连接 OpenAI 服务，请重试"
     }
 
     private fun readableTencentError(error: Throwable): String = when (error) {
@@ -214,16 +231,42 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
         return validateProxyUrl(runtimeUrl) ?: validateProxyUrl(BuildConfig.OPENAI_PROXY_URL)
     }
 
+    private fun openAiToken(): String = preferences.getString(PREF_OPENAI_TOKEN, null).orEmpty().trim()
+
+    private fun openAiModel(): String = preferences.getString(PREF_OPENAI_MODEL, null)
+        ?.trim()
+        ?.takeIf(String::isNotEmpty)
+        ?: BuildConfig.OPENAI_MODEL.trim()
+
+    private fun chatCompletionsUrl(baseUrl: URL): URL {
+        val base = baseUrl.toString().trimEnd('/')
+        return when {
+            base.endsWith("/chat/completions") -> baseUrl
+            base.endsWith("/v1") -> URL("$base/chat/completions")
+            else -> URL("$base/v1/chat/completions")
+        }
+    }
+
     private fun validateProxyUrl(rawUrl: String): URL? {
         val candidate = rawUrl.trim()
         if (candidate.isEmpty() || candidate.contains('\\')) return null
         return runCatching { URL(candidate) }.getOrNull()?.takeIf { url ->
-            url.protocol.equals("https", ignoreCase = true) &&
+            val secure = url.protocol.equals("https", ignoreCase = true)
+            val localHttp = url.protocol.equals("http", ignoreCase = true) && url.host.isPrivateNetworkHost()
+            (secure || localHttp) &&
                 url.host.isNotBlank() &&
                 url.userInfo == null &&
                 url.query == null &&
                 url.ref == null
         }
+    }
+
+    private fun String.isPrivateNetworkHost(): Boolean {
+        val normalized = lowercase().removePrefix("[").removeSuffix("]")
+        if (normalized == "localhost" || normalized == "::1" || normalized.endsWith(".local")) return true
+        if (normalized.startsWith("10.") || normalized.startsWith("127.") || normalized.startsWith("192.168.")) return true
+        val parts = normalized.split('.')
+        return parts.size == 4 && parts[0] == "172" && (parts[1].toIntOrNull() in 16..31)
     }
 
     private fun readLimited(stream: InputStream?, maxChars: Int): String {
@@ -272,6 +315,11 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
         private const val MAX_SAFE_ERROR_CHARS = 300
         private const val PREFS_NAME = "research_service"
         private const val PREF_OPENAI_PROXY_URL = "openai_proxy_url"
+        private const val PREF_OPENAI_TOKEN = "openai_token"
+        private const val PREF_OPENAI_MODEL = "openai_model"
+        private const val INVALID_OPENAI_URL = "请输入 HTTPS 地址，或本地网络 HTTP 地址"
+        private const val OPENAI_TOKEN = "token"
+        private const val OPENAI_MODEL = "model"
         private const val TENCENT_STOCK_CODES = "codes"
         private const val TENCENT_STOCK_ENDPOINT = "https://qt.gtimg.cn/q="
         private const val TENCENT_USER_AGENT = "Mozilla/5.0 KuiklyStock/1.0"

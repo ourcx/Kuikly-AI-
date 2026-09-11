@@ -59,6 +59,9 @@ data class ChatState(
     val provider: ChatProvider = ChatProvider.OPENAI,
     val serviceSettingsVisible: Boolean = false,
     val serviceUrlDraft: String = "",
+    val serviceTokenDraft: String = "",
+    val serviceModelDraft: String = "",
+    val serviceTokenConfigured: Boolean = false,
     val serviceSettingsError: String? = null,
 )
 

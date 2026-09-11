@@ -3,7 +3,13 @@ package com.ourcx.kuiklystock
 import com.ourcx.kuiklystock.base.BasePager
 import com.ourcx.kuiklystock.base.bridgeModule
 import com.ourcx.kuiklystock.data.OpenAiChatRepository
+import com.ourcx.kuiklystock.data.InMemoryChatRepository
+import com.ourcx.kuiklystock.data.InMemoryStockRepository
+import com.ourcx.kuiklystock.data.ResilientChatRepository
+import com.ourcx.kuiklystock.data.ResilientInsightRepository
+import com.ourcx.kuiklystock.data.ResilientStockRepository
 import com.ourcx.kuiklystock.data.ResearchServiceConfiguration
+import com.ourcx.kuiklystock.data.ResearchServiceSettings
 import com.ourcx.kuiklystock.data.TencentStockRepository
 import com.ourcx.kuiklystock.domain.AppDestination
 import com.ourcx.kuiklystock.domain.AppTab
@@ -34,21 +40,34 @@ internal class StockHomePage : BasePager() {
             override val isConfigured: Boolean
                 get() = bridgeModule.isOpenAiConfigured()
 
-            override fun currentUrl(): String = bridgeModule.openAiProxyUrl()
+            override fun current(): ResearchServiceSettings = ResearchServiceSettings(
+                baseUrl = bridgeModule.openAiProxyUrl(),
+                model = bridgeModule.openAiModel(),
+                hasToken = bridgeModule.hasOpenAiToken(),
+            )
 
-            override fun save(url: String): Result<Unit> = bridgeModule.saveOpenAiProxyUrl(url)
+            override fun save(baseUrl: String, token: String, model: String): Result<Unit> =
+                bridgeModule.saveOpenAiConfiguration(baseUrl, token, model)
 
-            override fun clear() = bridgeModule.clearOpenAiProxyUrl()
+            override fun clear() = bridgeModule.clearOpenAiConfiguration()
         }
         val aiRepository = OpenAiChatRepository(
             configurationProvider = bridgeModule::isOpenAiConfigured,
             modelProvider = bridgeModule::openAiModel,
             requestInvoker = bridgeModule::requestOpenAi,
         )
+        val fixtureRepository = InMemoryStockRepository()
         StockHomeController(
-            stockRepository = TencentStockRepository(bridgeModule::requestTencentQuotes),
-            chatRepository = aiRepository,
-            insightRepository = aiRepository,
+            stockRepository = ResilientStockRepository(
+                remoteRepository = TencentStockRepository(bridgeModule::requestTencentQuotes),
+                fixtureRepository = fixtureRepository,
+            ),
+            chatRepository = ResilientChatRepository(aiRepository, InMemoryChatRepository()),
+            insightRepository = ResilientInsightRepository(
+                remoteRepository = aiRepository,
+                fixtureRepository = fixtureRepository,
+                remoteConfigured = bridgeModule::isOpenAiConfigured,
+            ),
             serviceConfiguration = serviceConfiguration,
             onStateChanged = { state -> viewState = state },
         )
@@ -74,12 +93,11 @@ internal class StockHomePage : BasePager() {
                     backgroundColor(DesignTokens.Colors.primary)
                 }
             }
-            stockHomeHeader()
-
             vbind({ context.viewState }) {
                 stockHomeContent(
                     state = context.viewState,
                     onBack = context.controller::backFromDetail,
+                    onRetryInsight = context.controller::retryDetailInsight,
                     onRetryMarket = context.controller.marketController::retry,
                     onSelectMarketDemo = context.controller.marketController::showDemoState,
                     onSelectStock = { symbol -> context.controller.selectStock(symbol) },
@@ -96,6 +114,8 @@ internal class StockHomePage : BasePager() {
                     onClearChat = context.controller.chatController::clearConversation,
                     onToggleServiceSettings = context.controller.chatController::toggleServiceSettings,
                     onUpdateServiceUrl = context.controller.chatController::updateServiceUrl,
+                    onUpdateServiceToken = context.controller.chatController::updateServiceToken,
+                    onUpdateServiceModel = context.controller.chatController::updateServiceModel,
                     onSaveServiceUrl = context.controller.chatController::saveServiceUrl,
                     onClearServiceUrl = context.controller.chatController::clearServiceUrl,
                 )
@@ -112,6 +132,7 @@ internal class StockHomePage : BasePager() {
 fun ViewContainer<*, *>.stockHomeContent(
     state: StockHomeState,
     onBack: () -> Unit,
+    onRetryInsight: () -> Unit,
     onRetryMarket: () -> Unit,
     onSelectMarketDemo: (MarketDemoState) -> Unit,
     onSelectStock: (String) -> Unit,
@@ -128,6 +149,8 @@ fun ViewContainer<*, *>.stockHomeContent(
     onClearChat: () -> Unit,
     onToggleServiceSettings: () -> Unit,
     onUpdateServiceUrl: (String) -> Unit,
+    onUpdateServiceToken: (String) -> Unit,
+    onUpdateServiceModel: (String) -> Unit,
     onSaveServiceUrl: () -> Unit,
     onClearServiceUrl: () -> Unit,
 ) {
@@ -161,6 +184,8 @@ fun ViewContainer<*, *>.stockHomeContent(
                     onClear = onClearChat,
                     onToggleServiceSettings = onToggleServiceSettings,
                     onUpdateServiceUrl = onUpdateServiceUrl,
+                    onUpdateServiceToken = onUpdateServiceToken,
+                    onUpdateServiceModel = onUpdateServiceModel,
                     onSaveServiceUrl = onSaveServiceUrl,
                     onClearServiceUrl = onClearServiceUrl,
                     onSelectStock = onSelectStock,
@@ -170,6 +195,7 @@ fun ViewContainer<*, *>.stockHomeContent(
             is AppDestination.Detail -> stockDetailContentSlot(
                 state = state.detail,
                 onBack = onBack,
+                onRetryInsight = onRetryInsight,
             )
         }
     }
@@ -201,57 +227,6 @@ fun ViewContainer<*, *>.stockHomeTabBar(
             }
             stockHomeTabItem("行情", AppTab.MARKET, selectedTab, onSelectTab)
             stockHomeTabItem("研究", AppTab.AI, selectedTab, onSelectTab)
-        }
-    }
-}
-
-private fun ViewContainer<*, *>.stockHomeHeader() {
-    View {
-        attr {
-            height(DesignTokens.Size.HEADER)
-            flexDirectionRow()
-            alignItemsCenter()
-            padding(left = DesignTokens.Size.PAGE_GUTTER, right = DesignTokens.Size.PAGE_GUTTER)
-            backgroundColor(DesignTokens.Colors.primary)
-        }
-        View {
-            attr {
-                width(DesignTokens.Spacing.XL)
-                height(DesignTokens.Spacing.XL)
-                allCenter()
-                borderRadius(DesignTokens.Radius.LG)
-                backgroundColor(DesignTokens.Colors.accentPrimary)
-                marginRight(DesignTokens.Spacing.SM)
-            }
-            Text {
-                attr {
-                    text("K")
-                    fontSize(DesignTokens.Typography.H4)
-                    fontWeightBold()
-                    color(DesignTokens.Colors.onPrimary)
-                }
-            }
-        }
-        View {
-            attr {
-                flex(DesignTokens.Size.FILL)
-            }
-            Text {
-                attr {
-                    text("KuiklyStock")
-                    fontSize(DesignTokens.Typography.H2)
-                    fontWeightBold()
-                    color(DesignTokens.Colors.onSurface)
-                }
-            }
-            Text {
-                attr {
-                    text("多市场行情与研究")
-                    fontSize(DesignTokens.Typography.CAPTION)
-                    color(DesignTokens.Colors.onSurfaceMuted)
-                    marginTop(DesignTokens.Spacing.XXS)
-                }
-            }
         }
     }
 }

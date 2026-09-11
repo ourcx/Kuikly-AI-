@@ -2,12 +2,45 @@ package com.ourcx.kuiklystock.data
 
 import com.ourcx.kuiklystock.domain.ChatRequest
 import com.ourcx.kuiklystock.domain.ChatResponse
+import com.ourcx.kuiklystock.domain.ChatContext
+import com.ourcx.kuiklystock.domain.ChatQuoteContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class InMemoryRepositoriesTest {
+    @Test
+    fun chatUsesRemoteMarketContextEvenWhenSymbolIsNotInFixture() {
+        val repository = InMemoryChatRepository()
+        var result: Result<ChatResponse>? = null
+
+        repository.ask(
+            ChatRequest(
+                question = "分析平安银行 000001",
+                context = ChatContext(
+                    listOf(ChatQuoteContext("000001", "平安银行", "SZSE", 11.78, -0.07, -0.59)),
+                ),
+            ),
+        ) { result = it }
+
+        val response = requireNotNull(result).getOrThrow()
+        assertEquals(listOf("000001"), response.symbols)
+        assertTrue(response.answer.contains("平安银行"))
+    }
+
+    @Test
+    fun buildsConservativeFallbackInsightForUnknownRemoteQuote() {
+        val repository = InMemoryStockRepository()
+        val quote = repository.getQuote("AAPL").copy(symbol = "NEW")
+        var result: Result<com.ourcx.kuiklystock.domain.StockInsight>? = null
+
+        repository.getInsight(quote) { result = it }
+
+        val insight = requireNotNull(result).getOrThrow()
+        assertEquals("NEW", insight.symbol)
+        assertTrue(insight.risks.any { it.contains("不构成投资建议") })
+    }
     @Test
     fun stockRepositoryReturnsStableFixturesAndNormalizesSymbols() {
         val repository = InMemoryStockRepository()

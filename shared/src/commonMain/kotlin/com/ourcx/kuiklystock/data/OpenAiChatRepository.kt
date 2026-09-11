@@ -14,7 +14,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
-/** OpenAI Responses API client that delegates credential handling to an HTTPS backend proxy. */
+/** OpenAI-compatible Chat Completions client. Native code owns URL and credential handling. */
 class OpenAiChatRepository(
     private val configurationProvider: () -> Boolean,
     private val modelProvider: () -> String,
@@ -107,6 +107,7 @@ class OpenAiChatRepository(
             signals = payload.signals,
             risks = payload.risks,
             updatedAt = quote.updatedAt.ifBlank { "腾讯行情实时数据" },
+            provider = ChatProvider.OPENAI,
         )
     }
 
@@ -122,12 +123,13 @@ class OpenAiChatRepository(
 }
 
 @Serializable
-private data class OpenAiResponsesRequest(
+private data class OpenAiChatCompletionsRequest(
     val model: String,
-    val instructions: String,
-    val input: String,
-    val previous_response_id: String? = null,
+    val messages: List<OpenAiMessage>,
 )
+
+@Serializable
+private data class OpenAiMessage(val role: String, val content: String)
 
 @Serializable
 private data class OpenAiInsightPayload(
@@ -137,39 +139,52 @@ private data class OpenAiInsightPayload(
     val risks: List<String>,
 )
 
-private fun ChatRequest.toOpenAiRequest(model: String): OpenAiResponsesRequest {
+private fun ChatRequest.toOpenAiRequest(model: String): OpenAiChatCompletionsRequest {
     val quoteContext = context.quotes.joinToString(separator = "\n") { quote ->
         "${quote.name}(${quote.symbol}, ${quote.exchange})：最新价 ${quote.price}，涨跌 ${quote.change}，涨跌幅 ${quote.changePercent}%"
     }.ifBlank { "当前没有可用行情数据。" }
-    return OpenAiResponsesRequest(
+    return OpenAiChatCompletionsRequest(
         model = model.ifBlank { DEFAULT_OPENAI_MODEL },
-        instructions = SYSTEM_INSTRUCTIONS,
-        input = "用户问题：$question\n\n腾讯实时行情上下文：\n$quoteContext",
-        previous_response_id = conversationId,
+        messages = listOf(
+            OpenAiMessage("system", SYSTEM_INSTRUCTIONS.trimIndent()),
+            OpenAiMessage("user", "用户问题：$question\n\n腾讯实时行情上下文：\n$quoteContext"),
+        ),
     )
 }
 
-private fun StockQuote.toOpenAiInsightRequest(model: String): OpenAiResponsesRequest = OpenAiResponsesRequest(
+private fun StockQuote.toOpenAiInsightRequest(model: String): OpenAiChatCompletionsRequest = OpenAiChatCompletionsRequest(
     model = model.ifBlank { DEFAULT_OPENAI_MODEL },
-    instructions = INSIGHT_INSTRUCTIONS,
-    input = """
-        请分析以下腾讯实时行情事实：
-        名称：$name
-        代码：$symbol
-        交易所：$exchange
-        最新价：$price
-        涨跌额：$change
-        涨跌幅：$changePercent%
-        开盘价：$open
-        最高价：$high
-        最低价：$low
-        前收盘价：$previousClose
-        成交量：$volume
-        行情时间：$updatedAt
-    """.trimIndent(),
+    messages = listOf(
+        OpenAiMessage("system", INSIGHT_INSTRUCTIONS.trimIndent()),
+        OpenAiMessage(
+            "user",
+            """
+                请分析以下腾讯实时行情事实：
+                名称：$name
+                代码：$symbol
+                交易所：$exchange
+                最新价：$price
+                涨跌额：$change
+                涨跌幅：$changePercent%
+                开盘价：$open
+                最高价：$high
+                最低价：$low
+                前收盘价：$previousClose
+                成交量：$volume
+                行情时间：$updatedAt
+            """.trimIndent(),
+        ),
+    ),
 )
 
 private fun JsonObject.extractOutputText(): String {
+    val choices = this["choices"] as? JsonArray
+    choices?.mapNotNull { choice ->
+        val message = (choice as? JsonObject)?.get("message") as? JsonObject
+        message?.get("content")?.jsonPrimitive?.content
+    }?.filter(String::isNotBlank)?.joinToString("\n")?.takeIf(String::isNotBlank)?.let { return it }
+
+    // Keep parsing the former Responses shape so existing compatible gateways can migrate without downtime.
     this["output_text"]?.jsonPrimitive?.content?.let { return it }
     val output = this["output"] as? JsonArray ?: return ""
     return output.flatMap { item ->

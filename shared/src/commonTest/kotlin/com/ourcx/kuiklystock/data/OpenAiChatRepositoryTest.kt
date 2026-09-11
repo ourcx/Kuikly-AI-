@@ -19,7 +19,7 @@ class OpenAiChatRepositoryTest {
             requestBody = body
             callback(
                 Result.success(
-                    """{"id":"response-insight","output_text":"{\"trend_label\":\"震荡偏强\",\"summary\":\"价格高于前收。\",\"signals\":[\"关注日内高点\"],\"risks\":[\"波动风险，不构成投资建议\"]}"}""",
+                    """{"id":"chatcmpl-insight","choices":[{"message":{"role":"assistant","content":"{\"trend_label\":\"震荡偏强\",\"summary\":\"价格高于前收。\",\"signals\":[\"关注日内高点\"],\"risks\":[\"波动风险，不构成投资建议\"]}"}}]}""",
                 ),
             )
         }
@@ -35,7 +35,7 @@ class OpenAiChatRepositoryTest {
     }
 
     @Test
-    fun createsResponsesRequestAndParsesOutputText() {
+    fun createsChatCompletionsRequestAndParsesAssistantMessage() {
         var payload = ""
         val repository = OpenAiChatRepository({ true }, { "gpt-test" }) { body, callback ->
             payload = body
@@ -52,7 +52,9 @@ class OpenAiChatRepositoryTest {
         ) { result = it }
 
         assertTrue(payload.contains("\"model\":\"gpt-test\""))
-        assertTrue(payload.contains("\"previous_response_id\":\"resp_previous\""))
+        assertTrue(payload.contains("\"messages\""))
+        assertTrue(payload.contains("\"role\":\"system\""))
+        assertFalse(payload.contains("previous_response_id"))
         val response = requireNotNull(result).getOrThrow()
         assertEquals("resp_next", response.conversationId)
         assertEquals("AAPL 行情偏强。", response.answer)
@@ -82,8 +84,8 @@ private val QUOTE = StockQuote(
 private const val OPENAI_RESPONSE = """
 {
   "id": "resp_next",
-  "output": [
-    {"type": "message", "content": [{"type": "output_text", "text": "AAPL 行情偏强。"}]}
+  "choices": [
+    {"message": {"role": "assistant", "content": "AAPL 行情偏强。"}}
   ]
 }
 """

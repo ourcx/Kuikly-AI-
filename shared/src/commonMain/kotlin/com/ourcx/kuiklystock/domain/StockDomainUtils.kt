@@ -12,6 +12,24 @@ data class ParsedStockAiContent(
     val showTrend: Boolean = false,
 )
 
+data class TrendAnalysis(
+    val rangePercent: Double,
+    val rangePositionPercent: Double,
+    val relativeToPreviousClosePercent: Double,
+)
+
+fun analyzeTrend(quote: StockQuote): TrendAnalysis {
+    val range = (quote.high - quote.low).coerceAtLeast(0.0)
+    val rangePercent = if (quote.previousClose > 0.0) range / quote.previousClose * 100.0 else 0.0
+    val position = if (range > 0.0) ((quote.price - quote.low) / range * 100.0).coerceIn(0.0, 100.0) else 50.0
+    val relative = if (quote.previousClose > 0.0) {
+        (quote.price - quote.previousClose) / quote.previousClose * 100.0
+    } else {
+        0.0
+    }
+    return TrendAnalysis(rangePercent, position, relative)
+}
+
 fun formatStockPrice(price: Double): String = formatDecimal(price)
 
 fun formatStockChange(change: Double): String = formatSignedDecimal(change)

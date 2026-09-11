@@ -36,10 +36,16 @@ interface ChatRepository {
 
 interface ResearchServiceConfiguration {
     val isConfigured: Boolean
-    fun currentUrl(): String
-    fun save(url: String): Result<Unit>
+    fun current(): ResearchServiceSettings
+    fun save(baseUrl: String, token: String, model: String): Result<Unit>
     fun clear()
 }
+
+data class ResearchServiceSettings(
+    val baseUrl: String = "",
+    val model: String = "",
+    val hasToken: Boolean = false,
+)
 
 class StockNotFoundException(
     val symbol: String,

@@ -17,6 +17,8 @@ sealed interface ChatContentBlock {
     data class StockCard(val symbol: String) : ChatContentBlock
 
     data class Trend(val symbol: String) : ChatContentBlock
+
+    data class Error(val message: String) : ChatContentBlock
 }
 
 enum class ChatRole {

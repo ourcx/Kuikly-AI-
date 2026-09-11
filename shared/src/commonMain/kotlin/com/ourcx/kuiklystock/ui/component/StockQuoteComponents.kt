@@ -1,6 +1,7 @@
 package com.ourcx.kuiklystock.ui.component
 
 import com.ourcx.kuiklystock.domain.StockQuote
+import com.ourcx.kuiklystock.domain.analyzeTrend
 import com.ourcx.kuiklystock.domain.formatStockChange
 import com.ourcx.kuiklystock.domain.formatStockChangePercent
 import com.ourcx.kuiklystock.domain.formatStockPrice
@@ -11,6 +12,7 @@ import com.tencent.kuikly.core.base.Color
 import com.tencent.kuikly.core.base.ViewContainer
 import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
+import com.tencent.kuikly.core.views.Canvas
 
 /** Reusable compact quote card. When supplied, [onClick] receives the quote symbol. */
 fun ViewContainer<*, *>.stockCard(quote: StockQuote, onClick: ((String) -> Unit)? = null) {
@@ -33,7 +35,7 @@ fun ViewContainer<*, *>.stockCard(quote: StockQuote, onClick: ((String) -> Unit)
         }
         Text {
             attr {
-                text("${quote.exchange} · ${quote.symbol}")
+                text("${quote.exchange} · ${quote.symbol}  |  ${quote.dataSource.label}")
                 fontSize(DesignTokens.Typography.CAPTION)
                 color(DesignTokens.Colors.accentTertiary)
                 marginTop(DesignTokens.Spacing.XXS)
@@ -130,10 +132,11 @@ private fun ViewContainer<*, *>.metricCell(label: String, value: String) {
     }
 }
 
-/** Reusable mini trend chart backed by normalized point heights. */
-fun ViewContainer<*, *>.sparkline(points: kotlin.collections.List<Double>, change: Double = 0.0) {
-    val normalizedPoints = normalizeTrendPoints(points)
-    val chartColor = trendColor(change)
+/** Kuikly Canvas price-range trajectory with snapshot-derived analysis. */
+fun ViewContainer<*, *>.sparkline(quote: StockQuote) {
+    val normalizedPoints = normalizeTrendPoints(quote.trendPoints)
+    val chartColor = trendColor(quote.change)
+    val analysis = analyzeTrend(quote)
     View {
         attr {
             padding(DesignTokens.Spacing.MD)
@@ -156,7 +159,7 @@ fun ViewContainer<*, *>.sparkline(points: kotlin.collections.List<Double>, chang
             }
             Text {
                 attr {
-                    text(trendDescription(change))
+                    text(trendDescription(quote.change))
                     fontSize(DesignTokens.Typography.CAPTION)
                     fontWeightBold()
                     color(chartColor)
@@ -165,7 +168,7 @@ fun ViewContainer<*, *>.sparkline(points: kotlin.collections.List<Double>, chang
         }
         Text {
             attr {
-                text("日内走势 · 实时区间")
+                text("价格区间轨迹 · ${quote.dataSource.label}")
                 fontSize(DesignTokens.Typography.CAPTION)
                 color(DesignTokens.Colors.accentTertiary)
                 marginTop(DesignTokens.Spacing.XXS)
@@ -181,28 +184,76 @@ fun ViewContainer<*, *>.sparkline(points: kotlin.collections.List<Double>, chang
                 }
             }
         } else {
-            View {
-                attr {
-                    height(DesignTokens.Size.SPARKLINE_HEIGHT)
-                    flexDirectionRow()
+            Canvas({
+                attr { height(DesignTokens.Size.SPARKLINE_HEIGHT) }
+            }) { canvas, width, height ->
+                val horizontalInset = 5f
+                val verticalInset = 8f
+                val drawableWidth = (width - horizontalInset * 2).coerceAtLeast(1f)
+                val drawableHeight = (height - verticalInset * 2).coerceAtLeast(1f)
+
+                canvas.beginPath()
+                canvas.setLineDash(listOf(4f, 4f))
+                canvas.strokeStyle(DesignTokens.Colors.onSurfaceMuted)
+                canvas.lineWidth(1f)
+                canvas.moveTo(horizontalInset, verticalInset + drawableHeight / 2f)
+                canvas.lineTo(width - horizontalInset, verticalInset + drawableHeight / 2f)
+                canvas.stroke()
+
+                canvas.beginPath()
+                canvas.setLineDash(emptyList())
+                normalizedPoints.forEachIndexed { index, point ->
+                    val x = horizontalInset + drawableWidth * index / (normalizedPoints.size - 1).coerceAtLeast(1)
+                    val y = verticalInset + drawableHeight * (1f - point)
+                    if (index == 0) canvas.moveTo(x, y) else canvas.lineTo(x, y)
                 }
-                normalizedPoints.forEach { point ->
-                    View {
-                        attr {
-                            flex(DesignTokens.Size.FILL)
-                            height(DesignTokens.Size.SPARKLINE_HEIGHT)
-                            marginRight(DesignTokens.Size.SPARKLINE_BAR_GAP)
-                        }
-                        View {
-                            attr {
-                                height(DesignTokens.Size.SPARKLINE_BAR_MIN_HEIGHT + point * (DesignTokens.Size.SPARKLINE_HEIGHT - DesignTokens.Size.SPARKLINE_BAR_MIN_HEIGHT))
-                                absolutePosition(bottom = 0f, left = 0f, right = 0f)
-                                borderRadius(DesignTokens.Radius.SM)
-                                backgroundColor(chartColor)
-                            }
-                        }
-                    }
-                }
+                canvas.strokeStyle(chartColor)
+                canvas.lineWidth(3f)
+                canvas.lineCapRound()
+                canvas.stroke()
+
+                val last = normalizedPoints.last()
+                val lastX = width - horizontalInset
+                val lastY = verticalInset + drawableHeight * (1f - last)
+                canvas.beginPath()
+                canvas.arc(lastX, lastY, 4f, 0f, (kotlin.math.PI * 2).toFloat(), false)
+                canvas.fillStyle(chartColor)
+                canvas.fill()
+            }
+            trendMetrics(analysis.rangePercent, analysis.rangePositionPercent, analysis.relativeToPreviousClosePercent)
+        }
+    }
+}
+
+private fun ViewContainer<*, *>.trendMetrics(range: Double, position: Double, relative: Double) {
+    View {
+        attr {
+            flexDirectionRow()
+            marginTop(DesignTokens.Spacing.SM)
+        }
+        trendMetric("振幅", "${formatStockPrice(range)}%")
+        trendMetric("区间位置", "${formatStockPrice(position)}%")
+        trendMetric("较昨收", formatStockChangePercent(relative))
+    }
+}
+
+private fun ViewContainer<*, *>.trendMetric(label: String, value: String) {
+    View {
+        attr { flex(DesignTokens.Size.FILL) }
+        Text {
+            attr {
+                text(label)
+                fontSize(DesignTokens.Typography.CAPTION)
+                color(DesignTokens.Colors.onSurfaceMuted)
+            }
+        }
+        Text {
+            attr {
+                text(value)
+                fontSize(DesignTokens.Typography.BODY)
+                fontWeightBold()
+                color(DesignTokens.Colors.onSurface)
+                marginTop(DesignTokens.Spacing.XXS)
             }
         }
     }

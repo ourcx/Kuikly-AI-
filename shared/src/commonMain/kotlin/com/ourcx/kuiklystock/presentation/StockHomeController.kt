@@ -126,6 +126,11 @@ class StockHomeController(
         )
     }
 
+    fun retryDetailInsight() {
+        val detail = state.destination as? AppDestination.Detail ?: return
+        selectStock(detail.symbol)
+    }
+
     private fun updateState(newState: StockHomeState) {
         state = newState
         onStateChanged(newState)

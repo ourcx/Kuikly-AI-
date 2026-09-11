@@ -3,6 +3,7 @@ package com.ourcx.kuiklystock.data
 import com.ourcx.kuiklystock.domain.ChatProvider
 import com.ourcx.kuiklystock.domain.ChatRequest
 import com.ourcx.kuiklystock.domain.ChatResponse
+import com.ourcx.kuiklystock.domain.ChatQuoteContext
 import com.ourcx.kuiklystock.domain.StockInsight
 import com.ourcx.kuiklystock.domain.StockQuote
 
@@ -19,9 +20,33 @@ class InMemoryStockRepository : StockRepository, InsightRepository {
         callback(
             INSIGHTS_BY_SYMBOL[normalizeSymbol(quote.symbol)]
                 ?.let(Result.Companion::success)
-                ?: Result.failure(StockNotFoundException(quote.symbol)),
+                ?: Result.success(quote.toFallbackInsight()),
         )
     }
+}
+
+private fun StockQuote.toFallbackInsight(): StockInsight {
+    val trend = when {
+        changePercent > 1.0 -> "偏强运行"
+        changePercent < -1.0 -> "偏弱运行"
+        else -> "区间震荡"
+    }
+    val location = when {
+        price >= high -> "最新价位于日内高位附近"
+        price <= low -> "最新价位于日内低位附近"
+        else -> "最新价位于日内高低区间之间"
+    }
+    return StockInsight(
+        symbol = symbol,
+        trendLabel = trend,
+        summary = "$location，当前较昨收${if (change >= 0.0) "上涨" else "下跌"}。",
+        signals = listOf(
+            "今开 $open，最新 $price",
+            "日内区间 $low 至 $high",
+        ),
+        risks = listOf("快照数据不能替代完整分时走势", "内容仅供演示，不构成投资建议"),
+        updatedAt = updatedAt.ifBlank { "离线演示数据" },
+    )
 }
 
 /** Deterministic AI response source; questions containing `失败` exercise the retry path. */
@@ -38,14 +63,17 @@ class InMemoryChatRepository : ChatRepository {
             throw ChatFixtureException(DEMONSTRATION_FAILURE_MESSAGE)
         }
 
-        val matchedSymbol = findMentionedSymbol(normalizedQuestion) ?: DEFAULT_CHAT_SYMBOL
-        val quote = QUOTES_BY_SYMBOL.getValue(matchedSymbol)
+        val contextQuote = request.context.quotes.firstOrNull { quote ->
+            normalizedQuestion.uppercase().contains(quote.symbol.uppercase()) || normalizedQuestion.contains(quote.name)
+        }
+        val matchedSymbol = contextQuote?.symbol ?: findMentionedSymbol(normalizedQuestion) ?: DEFAULT_CHAT_SYMBOL
+        val quote = contextQuote ?: QUOTES_BY_SYMBOL.getValue(matchedSymbol).toChatQuoteContext()
         val answer = buildString {
             appendLine("## ${quote.name}（${quote.symbol}）行情速览")
             appendLine()
             appendLine("- 最新价：${quote.price}")
             appendLine("- 涨跌幅：${quote.changePercent}%")
-            appendLine("- 观察：${INSIGHTS_BY_SYMBOL.getValue(matchedSymbol).summary}")
+            appendLine("- 观察：${quote.localObservation()}")
             appendLine()
             appendLine("> 内容仅供演示，不构成投资建议")
         }
@@ -64,6 +92,21 @@ class InMemoryChatRepository : ChatRepository {
             normalizedQuestion.contains(quote.symbol) || question.contains(quote.name)
         }?.symbol
     }
+}
+
+private fun StockQuote.toChatQuoteContext(): ChatQuoteContext = ChatQuoteContext(
+    symbol = symbol,
+    name = name,
+    exchange = exchange,
+    price = price,
+    change = change,
+    changePercent = changePercent,
+)
+
+private fun ChatQuoteContext.localObservation(): String = when {
+    changePercent > 1.0 -> "价格相对昨收明显走强，需继续观察波动与成交承接。"
+    changePercent < -1.0 -> "价格相对昨收明显走弱，需关注下行风险。"
+    else -> "价格围绕昨收窄幅波动，当前方向信号有限。"
 }
 
 private fun normalizeSymbol(symbol: String): String = symbol.trim().uppercase()

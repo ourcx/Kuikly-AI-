@@ -92,10 +92,14 @@ class ChatController(
     fun toggleServiceSettings() {
         if (state.isSending) return
         val visible = !state.serviceSettingsVisible
+        val settings = serviceConfiguration?.current()
         updateState(
             state.copy(
                 serviceSettingsVisible = visible,
-                serviceUrlDraft = if (visible) serviceConfiguration?.currentUrl().orEmpty() else "",
+                serviceUrlDraft = if (visible) settings?.baseUrl.orEmpty() else "",
+                serviceTokenDraft = "",
+                serviceModelDraft = if (visible) settings?.model.orEmpty() else "",
+                serviceTokenConfigured = visible && settings?.hasToken == true,
                 serviceSettingsError = null,
             ),
         )
@@ -105,15 +109,29 @@ class ChatController(
         updateState(state.copy(serviceUrlDraft = url, serviceSettingsError = null))
     }
 
+    fun updateServiceToken(token: String) {
+        updateState(state.copy(serviceTokenDraft = token, serviceSettingsError = null))
+    }
+
+    fun updateServiceModel(model: String) {
+        updateState(state.copy(serviceModelDraft = model, serviceSettingsError = null))
+    }
+
     fun saveServiceUrl() {
         val configuration = serviceConfiguration ?: return
-        val url = state.serviceUrlDraft.trim()
-        configuration.save(url).fold(
+        configuration.save(
+            baseUrl = state.serviceUrlDraft.trim(),
+            token = state.serviceTokenDraft.trim(),
+            model = state.serviceModelDraft.trim(),
+        ).fold(
             onSuccess = {
                 updateState(
                     state.copy(
                         serviceSettingsVisible = false,
                         serviceUrlDraft = "",
+                        serviceTokenDraft = "",
+                        serviceModelDraft = "",
+                        serviceTokenConfigured = true,
                         serviceSettingsError = null,
                         connectionStatus = WorkBuddyConnectionStatus.AVAILABLE,
                     ),
@@ -133,6 +151,9 @@ class ChatController(
             state.copy(
                 serviceSettingsVisible = false,
                 serviceUrlDraft = "",
+                serviceTokenDraft = "",
+                serviceModelDraft = "",
+                serviceTokenConfigured = false,
                 serviceSettingsError = null,
                 connectionStatus = if (remainsConfigured) {
                     WorkBuddyConnectionStatus.AVAILABLE
@@ -214,7 +235,7 @@ class ChatController(
         val failedAssistant = ChatMessage(
             id = assistantMessageId,
             role = ChatRole.ASSISTANT,
-            blocks = listOf(ChatContentBlock.Markdown(message)),
+            blocks = listOf(ChatContentBlock.Error(message)),
             status = ChatMessageStatus.FAILED,
             retryQuestion = question,
         )
@@ -228,11 +249,16 @@ class ChatController(
         )
     }
 
-    private fun initialState(): ChatState = ChatState(
-        connectionStatus = initialConnectionStatus(),
-        provider = initialProvider(),
-        serviceUrlDraft = serviceConfiguration?.currentUrl().orEmpty(),
-    )
+    private fun initialState(): ChatState {
+        val settings = serviceConfiguration?.current()
+        return ChatState(
+            connectionStatus = initialConnectionStatus(),
+            provider = initialProvider(),
+            serviceUrlDraft = settings?.baseUrl.orEmpty(),
+            serviceModelDraft = settings?.model.orEmpty(),
+            serviceTokenConfigured = settings?.hasToken == true,
+        )
+    }
 
     private fun initialConnectionStatus(): WorkBuddyConnectionStatus {
         val openAiConfigured = serviceConfiguration?.isConfigured ?: when (chatRepository) {
@@ -271,4 +297,4 @@ class ChatController(
 private fun List<ChatMessage>.replaceMessage(replacement: ChatMessage): List<ChatMessage> =
     map { message -> if (message.id == replacement.id) replacement else message }
 
-private const val UNCONFIGURED_MESSAGE = "OpenAI 服务尚未配置，请先配置 HTTPS 代理地址"
+private const val UNCONFIGURED_MESSAGE = "OpenAI 服务尚未配置，请先填写 Base URL、Token 和 Model"

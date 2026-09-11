@@ -1,6 +1,7 @@
 package com.ourcx.kuiklystock.data
 
 import com.ourcx.kuiklystock.domain.StockQuote
+import com.ourcx.kuiklystock.domain.QuoteDataSource
 
 /** Production stock source backed by Tencent's multi-market quote endpoint. */
 class TencentStockRepository(
@@ -79,6 +80,7 @@ private fun parseQuote(definition: StockDefinition, fields: List<String>): Stock
         volume = fields.decimalAt(6)?.toLong() ?: 0L,
         trendPoints = trendPoints,
         updatedAt = fields.getOrNull(30).orEmpty(),
+        dataSource = QuoteDataSource.TENCENT,
     )
 }
 

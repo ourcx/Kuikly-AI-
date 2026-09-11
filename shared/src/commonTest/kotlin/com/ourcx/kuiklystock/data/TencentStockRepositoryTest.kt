@@ -4,6 +4,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
+import com.ourcx.kuiklystock.domain.QuoteDataSource
 
 class TencentStockRepositoryTest {
     @Test
@@ -24,6 +25,7 @@ class TencentStockRepositoryTest {
         assertEquals(-0.76, quotes.first().changePercent)
         assertEquals(70011913L, quotes.last().volume)
         assertTrue(quotes.first().trendPoints.isNotEmpty())
+        assertEquals(QuoteDataSource.TENCENT, quotes.first().dataSource)
     }
 
     @Test

@@ -28,6 +28,22 @@ class StockDomainUtilsTest {
     }
 
     @Test
+    fun analyzesSnapshotRangeWithoutClaimingTimeSeries() {
+        val analysis = analyzeTrend(
+            StockQuote(
+                symbol = "TEST", name = "测试", exchange = "SSE", price = 108.0,
+                change = 8.0, changePercent = 8.0, open = 102.0, high = 110.0,
+                low = 90.0, previousClose = 100.0, volume = 1L,
+                trendPoints = listOf(100.0, 102.0, 90.0, 110.0, 108.0), updatedAt = "",
+            ),
+        )
+
+        assertEquals(20.0, analysis.rangePercent)
+        assertEquals(90.0, analysis.rangePositionPercent)
+        assertEquals(8.0, analysis.relativeToPreviousClosePercent)
+    }
+
+    @Test
     fun parsesValidTrailingStockMetadata() {
         val parsed = parseStockAiMetadata(
             "## 行情速览\n正文\n<!--stock-ai:{\"symbols\":[\"00700\",\"AAPL\"],\"showTrend\":true}-->",

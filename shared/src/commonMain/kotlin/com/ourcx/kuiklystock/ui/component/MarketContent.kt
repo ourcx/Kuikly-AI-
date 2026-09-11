@@ -23,7 +23,7 @@ import com.tencent.kuikly.core.views.View
 fun ViewContainer<*, *>.marketContentSlot(
     state: MarketState,
     onRetry: () -> Unit,
-    @Suppress("UNUSED_PARAMETER") onSelectDemo: (MarketDemoState) -> Unit,
+    onSelectDemo: (MarketDemoState) -> Unit,
     onSelectStock: (String) -> Unit,
     onUpdateQuery: (String) -> Unit,
     onSelectFilter: (MarketFilter) -> Unit,
@@ -39,7 +39,10 @@ fun ViewContainer<*, *>.marketContentSlot(
             borderRadius(DesignTokens.Radius.LG)
             backgroundColor(DesignTokens.Colors.surfaceAlt)
         }
-        marketHeader()
+        marketHeader(
+            onRefresh = onRetry,
+            onShowFailure = { onSelectDemo(MarketDemoState.ERROR) },
+        )
         marketDiscoveryToolbar(
             state = state,
             onUpdateQuery = onUpdateQuery,
@@ -76,18 +79,72 @@ fun ViewContainer<*, *>.marketContentSlot(
     }
 }
 
-private fun ViewContainer<*, *>.marketHeader() {
+private fun ViewContainer<*, *>.marketHeader(onRefresh: () -> Unit, onShowFailure: () -> Unit) {
     View {
         attr {
             padding(DesignTokens.Size.PAGE_GUTTER)
             backgroundColor(DesignTokens.Colors.primary)
         }
+        View {
+            attr {
+                flexDirectionRow()
+                alignItemsCenter()
+            }
+            View {
+                attr { flex(DesignTokens.Size.FILL) }
+                Text {
+                    attr {
+                        text("行情")
+                        fontSize(DesignTokens.Typography.H2)
+                        fontWeightBold()
+                        color(DesignTokens.Colors.onSurface)
+                    }
+                }
+                Text {
+                    attr {
+                        text("实时优先 · 网络不可用时自动切换离线数据")
+                        fontSize(DesignTokens.Typography.CAPTION)
+                        color(DesignTokens.Colors.onSurfaceMuted)
+                        marginTop(DesignTokens.Spacing.XXS)
+                    }
+                }
+            }
+            headerAction("失败态", DesignTokens.Colors.onSurfaceMuted, onShowFailure)
+            View {
+                attr {
+                    marginLeft(DesignTokens.Spacing.XS)
+                    padding(top = DesignTokens.Spacing.XS, bottom = DesignTokens.Spacing.XS, left = DesignTokens.Spacing.SM, right = DesignTokens.Spacing.SM)
+                    borderRadius(DesignTokens.Radius.FULL)
+                    backgroundColor(DesignTokens.Colors.surfaceElevated)
+                }
+                event { click { onRefresh() } }
+                Text {
+                    attr {
+                        text("刷新")
+                        fontSize(DesignTokens.Typography.CAPTION)
+                        fontWeightBold()
+                        color(DesignTokens.Colors.accentTertiary)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun ViewContainer<*, *>.headerAction(label: String, color: Color, onClick: () -> Unit) {
+    View {
+        attr {
+            padding(top = DesignTokens.Spacing.XS, bottom = DesignTokens.Spacing.XS, left = DesignTokens.Spacing.SM, right = DesignTokens.Spacing.SM)
+            borderRadius(DesignTokens.Radius.FULL)
+            backgroundColor(DesignTokens.Colors.surfaceElevated)
+        }
+        event { click { onClick() } }
         Text {
             attr {
-                text("行情")
-                fontSize(DesignTokens.Typography.H2)
+                text(label)
+                fontSize(DesignTokens.Typography.CAPTION)
                 fontWeightBold()
-                color(DesignTokens.Colors.onSurface)
+                color(color)
             }
         }
     }
@@ -429,7 +486,7 @@ private fun ViewContainer<*, *>.marketQuoteCard(
                 }
                 Text {
                     attr {
-                        text("${quote.exchange} · ${quote.symbol}")
+                        text("${quote.exchange} · ${quote.symbol}  |  ${quote.dataSource.label}")
                         fontSize(DesignTokens.Typography.CAPTION)
                         color(DesignTokens.Colors.onSurfaceMuted)
                         marginTop(DesignTokens.Spacing.XXS)

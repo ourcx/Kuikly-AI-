@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <base-config cleartextTrafficPermitted="false" />
+    <!-- 业务配置层只允许 localhost、.local 与私网 IP 使用 HTTP；公网地址仍强制 HTTPS。 -->
+    <base-config cleartextTrafficPermitted="true" />
 </network-security-config>
