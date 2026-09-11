@@ -259,7 +259,7 @@ private fun ViewContainer<*, *>.chatConversation(
         attr {
             flex(DesignTokens.Size.FILL)
             flexDirectionColumn()
-            padding(DesignTokens.Spacing.MD)
+            padding(top = DesignTokens.Spacing.MD, bottom = DesignTokens.Spacing.MD)
             backgroundColor(DesignTokens.Colors.surfaceBase)
         }
         if (state.messages.isEmpty() && !state.isSending) {
@@ -285,6 +285,7 @@ private fun ViewContainer<*, *>.chatWelcome(
     View {
         attr {
             padding(top = DesignTokens.Spacing.MD, bottom = DesignTokens.Spacing.MD)
+            margin(left = DesignTokens.Spacing.MD, right = DesignTokens.Spacing.MD)
         }
         Text {
             attr {
@@ -357,8 +358,11 @@ private fun ViewContainer<*, *>.chatMessage(
     val isUser = message.role == ChatRole.USER
     View {
         attr {
-            if (isUser) marginLeft(DesignTokens.Spacing.XL) else marginRight(DesignTokens.Spacing.XL)
-            marginBottom(DesignTokens.Spacing.SM)
+            margin(
+                left = if (isUser) DesignTokens.Spacing.XL + DesignTokens.Spacing.MD else DesignTokens.Spacing.MD,
+                right = if (isUser) DesignTokens.Spacing.MD else DesignTokens.Spacing.XL + DesignTokens.Spacing.MD,
+                bottom = DesignTokens.Spacing.SM,
+            )
             padding(DesignTokens.Spacing.MD)
             borderRadius(DesignTokens.Radius.LG)
             backgroundColor(
@@ -413,7 +417,10 @@ private fun ViewContainer<*, *>.chatContentBlock(
 private fun ViewContainer<*, *>.chatGeneratingBubble() {
     View {
         attr {
-            marginRight(DesignTokens.Spacing.XL)
+            margin(
+                left = DesignTokens.Spacing.MD,
+                right = DesignTokens.Spacing.XL + DesignTokens.Spacing.MD,
+            )
             padding(DesignTokens.Spacing.MD)
             borderRadius(DesignTokens.Radius.LG)
             backgroundColor(DesignTokens.Colors.surfaceElevated)

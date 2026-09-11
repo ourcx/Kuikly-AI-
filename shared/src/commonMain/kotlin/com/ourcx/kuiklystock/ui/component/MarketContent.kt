@@ -265,7 +265,6 @@ private fun ViewContainer<*, *>.marketQuoteGallery(
             flex(DesignTokens.Size.FILL)
             flexDirectionColumn()
             firstContentLoadMaxIndex(quotes.size)
-            padding(left = DesignTokens.Size.PAGE_GUTTER, right = DesignTokens.Size.PAGE_GUTTER)
         }
         marketOverview(quotes)
         if (recentQuotes.isNotEmpty()) {
@@ -291,7 +290,11 @@ private fun ViewContainer<*, *>.marketOverview(quotes: kotlin.collections.List<S
             flexDirectionRow()
             alignItemsCenter()
             padding(top = DesignTokens.Spacing.SM, bottom = DesignTokens.Spacing.SM)
-            marginBottom(DesignTokens.Spacing.SM)
+            margin(
+                left = DesignTokens.Size.PAGE_GUTTER,
+                right = DesignTokens.Size.PAGE_GUTTER,
+                bottom = DesignTokens.Spacing.SM,
+            )
             backgroundColor(DesignTokens.Colors.surfaceAlt)
         }
         View {
@@ -342,7 +345,11 @@ private fun ViewContainer<*, *>.recentQuotes(
     View {
         attr {
             padding(DesignTokens.Spacing.MD)
-            marginBottom(DesignTokens.Spacing.SM)
+            margin(
+                left = DesignTokens.Size.PAGE_GUTTER,
+                right = DesignTokens.Size.PAGE_GUTTER,
+                bottom = DesignTokens.Spacing.SM,
+            )
             borderRadius(DesignTokens.Radius.LG)
             backgroundColor(DesignTokens.Colors.surfaceElevated)
         }
@@ -396,7 +403,11 @@ private fun ViewContainer<*, *>.marketQuoteCard(
     View {
         attr {
             padding(DesignTokens.Spacing.MD)
-            marginBottom(DesignTokens.Spacing.SM)
+            margin(
+                left = DesignTokens.Size.PAGE_GUTTER,
+                right = DesignTokens.Size.PAGE_GUTTER,
+                bottom = DesignTokens.Spacing.SM,
+            )
             borderRadius(DesignTokens.Radius.LG)
             backgroundColor(DesignTokens.Colors.surfaceElevated)
         }
