@@ -104,7 +104,10 @@ internal class BridgeModule : Module() {
     }
 
     fun requestTencentQuotes(codes: List<String>, callback: (Result<String>) -> Unit) {
-        val params = JSONObject().put(TENCENT_STOCK_CODES, JSONArray(codes))
+        val codeArray = JSONArray().apply {
+            codes.forEach { put(it) }
+        }
+        val params = JSONObject().put(TENCENT_STOCK_CODES, codeArray)
         callNativeMethod(REQUEST_TENCENT_QUOTES, params) { response ->
             callback(
                 response?.let(::parseNativeResponse)
