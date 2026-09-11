@@ -19,7 +19,9 @@ class InMemoryRepositoriesTest {
             requireNotNull(quotes).getOrThrow().map { it.symbol },
         )
         assertEquals("腾讯控股", repository.getQuote(" 00700 " ).name)
-        assertEquals("AAPL", repository.getInsight("aapl").symbol)
+        var insight: Result<com.ourcx.kuiklystock.domain.StockInsight>? = null
+        repository.getInsight(repository.getQuote("aapl")) { insight = it }
+        assertEquals("AAPL", requireNotNull(insight).getOrThrow().symbol)
     }
 
     @Test

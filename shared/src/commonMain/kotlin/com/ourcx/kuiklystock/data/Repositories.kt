@@ -16,12 +16,11 @@ interface StockRepository {
      */
     fun getQuote(symbol: String): StockQuote
 
-    /**
-     * Returns the analysis paired with [symbol].
-     *
-     * @throws StockNotFoundException when the symbol is not available.
-     */
-    fun getInsight(symbol: String): StockInsight
+}
+
+interface InsightRepository {
+    /** Generates an AI insight from the supplied quote facts. */
+    fun getInsight(quote: StockQuote, callback: (Result<StockInsight>) -> Unit)
 }
 
 interface ChatRepository {

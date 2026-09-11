@@ -3,6 +3,7 @@ package com.ourcx.kuiklystock.presentation
 import com.ourcx.kuiklystock.data.ChatRepository
 import com.ourcx.kuiklystock.data.InMemoryChatRepository
 import com.ourcx.kuiklystock.data.InMemoryStockRepository
+import com.ourcx.kuiklystock.data.InsightRepository
 import com.ourcx.kuiklystock.data.StockRepository
 import com.ourcx.kuiklystock.data.ResearchServiceConfiguration
 import com.ourcx.kuiklystock.domain.AppDestination
@@ -17,13 +18,15 @@ import com.ourcx.kuiklystock.domain.StockQuote
 class StockHomeController(
     private val stockRepository: StockRepository = InMemoryStockRepository(),
     chatRepository: ChatRepository = InMemoryChatRepository(),
+    insightRepository: InsightRepository? =
+        (chatRepository as? InsightRepository) ?: (stockRepository as? InsightRepository),
     serviceConfiguration: ResearchServiceConfiguration? = null,
     private val onStateChanged: (StockHomeState) -> Unit = {},
 ) {
     var state: StockHomeState = StockHomeState()
         private set
 
-    val marketController = MarketController(stockRepository) { marketState ->
+    val marketController = MarketController(stockRepository, insightRepository) { marketState ->
         updateMarketState(marketState)
     }
 
@@ -31,7 +34,7 @@ class StockHomeController(
         chatRepository = chatRepository,
         contextProvider = {
             ChatContext(
-                quotes = (state.market.quotes as? LoadState.Content<List<StockQuote>>)?.value.orEmpty().map { quote ->
+                quotes = marketController.completeQuotesSnapshot().map { quote ->
                     ChatQuoteContext(
                         symbol = quote.symbol,
                         name = quote.name,
@@ -64,7 +67,12 @@ class StockHomeController(
     }
 
     fun selectStock(symbol: String): StockDetailState {
-        val selectedDetail = marketController.selectStock(symbol)
+        val selectedDetail = marketController.selectStock(symbol) { resolvedDetail ->
+            val currentDestination = state.destination as? AppDestination.Detail
+            if (currentDestination?.symbol == resolvedDetail.symbol) {
+                updateState(state.copy(detail = resolvedDetail))
+            }
+        }
         updateState(
             state.copy(
                 destination = AppDestination.Detail(

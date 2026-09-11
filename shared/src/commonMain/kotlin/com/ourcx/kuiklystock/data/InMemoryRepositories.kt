@@ -7,7 +7,7 @@ import com.ourcx.kuiklystock.domain.StockInsight
 import com.ourcx.kuiklystock.domain.StockQuote
 
 /** Deterministic, dependency-free stock data source for previews and controller tests. */
-class InMemoryStockRepository : StockRepository {
+class InMemoryStockRepository : StockRepository, InsightRepository {
     override fun getQuotes(callback: (Result<List<StockQuote>>) -> Unit) {
         callback(Result.success(FIXTURE_QUOTES))
     }
@@ -15,8 +15,13 @@ class InMemoryStockRepository : StockRepository {
     override fun getQuote(symbol: String): StockQuote =
         QUOTES_BY_SYMBOL[normalizeSymbol(symbol)] ?: throw StockNotFoundException(symbol)
 
-    override fun getInsight(symbol: String): StockInsight =
-        INSIGHTS_BY_SYMBOL[normalizeSymbol(symbol)] ?: throw StockNotFoundException(symbol)
+    override fun getInsight(quote: StockQuote, callback: (Result<StockInsight>) -> Unit) {
+        callback(
+            INSIGHTS_BY_SYMBOL[normalizeSymbol(quote.symbol)]
+                ?.let(Result.Companion::success)
+                ?: Result.failure(StockNotFoundException(quote.symbol)),
+        )
+    }
 }
 
 /** Deterministic AI response source; questions containing `失败` exercise the retry path. */

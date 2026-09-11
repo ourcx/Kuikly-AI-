@@ -1,6 +1,7 @@
 package com.ourcx.kuiklystock.presentation
 
 import com.ourcx.kuiklystock.data.InMemoryStockRepository
+import com.ourcx.kuiklystock.data.InsightRepository
 import com.ourcx.kuiklystock.data.StockRepository
 import com.ourcx.kuiklystock.domain.LoadState
 import com.ourcx.kuiklystock.domain.MarketFilter
@@ -143,6 +144,20 @@ class MarketControllerTest {
     }
 
     @Test
+    fun olderLoadCallbacksCannotOverwriteTheLatestResult() {
+        val repository = DeferredStockRepository()
+        val controller = MarketController(repository)
+
+        controller.load()
+        controller.load()
+        repository.complete(1, Result.success(listOf(NEW_QUOTE)))
+        repository.complete(0, Result.failure(IllegalStateException("stale failure")))
+
+        assertEquals(listOf(NEW_QUOTE), assertIs<LoadState.Content<List<StockQuote>>>(controller.state.quotes).value)
+        assertEquals(listOf(NEW_QUOTE), controller.completeQuotesSnapshot())
+    }
+
+    @Test
     fun demoStatesAndRetryFollowTheSameStateContract() {
         val controller = MarketController(FakeStockRepository())
 
@@ -164,6 +179,38 @@ class MarketControllerTest {
         assertEquals(QUOTE, assertIs<com.ourcx.kuiklystock.domain.StockDetailContent>(content.value).quote)
         assertEquals("股票代码不能为空", assertIs<LoadState.Error>(controller.selectStock("  " ).content).message)
         assertEquals("未找到股票：MISS", assertIs<LoadState.Error>(controller.selectStock("MISS").content).message)
+    }
+
+    @Test
+    fun selectStockPublishesOpenAiInsightAfterAsyncCompletion() {
+        val insightRepository = DeferredInsightRepository()
+        val controller = MarketController(FakeStockRepository(), insightRepository)
+        val observed = mutableListOf<com.ourcx.kuiklystock.domain.StockDetailState>()
+
+        val initial = controller.selectStock("DEMO", observed::add)
+        val initialContent = assertIs<LoadState.Content<com.ourcx.kuiklystock.domain.StockDetailContent>>(initial.content)
+        assertEquals(QUOTE, initialContent.value.quote)
+        assertIs<LoadState.Loading>(initialContent.value.insight)
+
+        insightRepository.complete(Result.success(INSIGHT))
+
+        val content = assertIs<LoadState.Content<com.ourcx.kuiklystock.domain.StockDetailContent>>(observed.single().content)
+        assertEquals(INSIGHT, assertIs<LoadState.Content<StockInsight>>(content.value.insight).value)
+    }
+
+    @Test
+    fun failedInsightKeepsQuoteAndTrendContentVisible() {
+        val insightRepository = DeferredInsightRepository()
+        val controller = MarketController(FakeStockRepository(), insightRepository)
+        val observed = mutableListOf<com.ourcx.kuiklystock.domain.StockDetailState>()
+
+        controller.selectStock("DEMO", observed::add)
+        insightRepository.complete(Result.failure(IllegalStateException("AI 暂不可用")))
+
+        val content = assertIs<LoadState.Content<com.ourcx.kuiklystock.domain.StockDetailContent>>(observed.single().content)
+        assertEquals(QUOTE, content.value.quote)
+        assertEquals(QUOTE.trendPoints, content.value.quote.trendPoints)
+        assertEquals("AI 暂不可用", assertIs<LoadState.Error>(content.value.insight).message)
     }
 
     @Test
@@ -199,7 +246,7 @@ private fun MarketController.contentAmplitudes(): List<Double> =
 private class FakeStockRepository(
     private val quotes: List<StockQuote> = listOf(QUOTE),
     private val failure: Throwable? = null,
-) : StockRepository {
+) : StockRepository, InsightRepository {
     override fun getQuotes(callback: (Result<List<StockQuote>>) -> Unit) {
         callback(failure?.let(Result.Companion::failure) ?: Result.success(quotes))
     }
@@ -207,9 +254,44 @@ private class FakeStockRepository(
     override fun getQuote(symbol: String): StockQuote =
         if (symbol.equals(QUOTE.symbol, ignoreCase = true)) QUOTE else throw com.ourcx.kuiklystock.data.StockNotFoundException(symbol)
 
-    override fun getInsight(symbol: String): StockInsight =
-        if (symbol.equals(INSIGHT.symbol, ignoreCase = true)) INSIGHT else throw com.ourcx.kuiklystock.data.StockNotFoundException(symbol)
+    override fun getInsight(quote: StockQuote, callback: (Result<StockInsight>) -> Unit) {
+        callback(
+            if (quote.symbol.equals(INSIGHT.symbol, ignoreCase = true)) Result.success(INSIGHT)
+            else Result.failure(com.ourcx.kuiklystock.data.StockNotFoundException(quote.symbol)),
+        )
+    }
+}
+
+private class DeferredStockRepository : StockRepository, InsightRepository {
+    private val callbacks = mutableListOf<(Result<List<StockQuote>>) -> Unit>()
+
+    override fun getQuotes(callback: (Result<List<StockQuote>>) -> Unit) {
+        callbacks += callback
+    }
+
+    override fun getQuote(symbol: String): StockQuote = NEW_QUOTE
+
+    override fun getInsight(quote: StockQuote, callback: (Result<StockInsight>) -> Unit) {
+        callback(Result.success(INSIGHT.copy(symbol = quote.symbol)))
+    }
+
+    fun complete(index: Int, result: Result<List<StockQuote>>) {
+        callbacks[index](result)
+    }
+}
+
+private class DeferredInsightRepository : InsightRepository {
+    private var callback: ((Result<StockInsight>) -> Unit)? = null
+
+    override fun getInsight(quote: StockQuote, callback: (Result<StockInsight>) -> Unit) {
+        this.callback = callback
+    }
+
+    fun complete(result: Result<StockInsight>) {
+        requireNotNull(callback).invoke(result)
+    }
 }
 
 private val QUOTE = StockQuote("DEMO", "示例", "TEST", 10.0, 1.0, 10.0, 9.0, 10.0, 8.0, 9.0, 100, listOf(9.0, 10.0))
+private val NEW_QUOTE = QUOTE.copy(price = 12.0, change = 3.0, changePercent = 33.33)
 private val INSIGHT = StockInsight("DEMO", "上行", "摘要", listOf("信号"), listOf("风险"), "现在")

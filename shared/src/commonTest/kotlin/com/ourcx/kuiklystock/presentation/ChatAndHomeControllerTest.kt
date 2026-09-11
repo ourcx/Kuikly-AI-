@@ -4,6 +4,7 @@ import com.ourcx.kuiklystock.data.ChatRepository
 import com.ourcx.kuiklystock.data.InMemoryChatRepository
 import com.ourcx.kuiklystock.data.InMemoryStockRepository
 import com.ourcx.kuiklystock.data.ResearchServiceConfiguration
+import com.ourcx.kuiklystock.data.StockRepository
 import com.ourcx.kuiklystock.domain.AppDestination
 import com.ourcx.kuiklystock.domain.AppTab
 import com.ourcx.kuiklystock.domain.ChatContentBlock
@@ -13,6 +14,7 @@ import com.ourcx.kuiklystock.domain.ChatRequest
 import com.ourcx.kuiklystock.domain.ChatResponse
 import com.ourcx.kuiklystock.domain.ChatRole
 import com.ourcx.kuiklystock.domain.LoadState
+import com.ourcx.kuiklystock.domain.StockQuote
 import com.ourcx.kuiklystock.domain.WorkBuddyConnectionStatus
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -220,6 +222,30 @@ class ChatAndHomeControllerTest {
     }
 
     @Test
+    fun chatContextUsesCompleteSnapshotDuringFilteringAndRefresh() {
+        val stockRepository = SnapshotStockRepository()
+        val chatRepository = DeferredChatRepository()
+        val controller = StockHomeController(
+            stockRepository = stockRepository,
+            chatRepository = chatRepository,
+        )
+        controller.marketController.load()
+        stockRepository.complete(0, Result.success(CONTEXT_QUOTES))
+        controller.marketController.updateQuery("AAPL")
+
+        controller.chatController.updateDraft("筛选后分析市场")
+        controller.chatController.send()
+        assertEquals(listOf("AAPL", "TSLA"), chatRepository.requests.single().context.quotes.map { it.symbol })
+
+        chatRepository.complete(ChatResponse(answer = "完成"))
+        controller.marketController.load()
+        controller.chatController.updateDraft("刷新中继续分析")
+        controller.chatController.send()
+
+        assertEquals(listOf("AAPL", "TSLA"), chatRepository.requests.last().context.quotes.map { it.symbol })
+    }
+
+    @Test
     fun oneTapAiIgnoresBlankAndUnknownSymbolsWithoutChangingHomeState() {
         val repository = DeferredChatRepository()
         val controller = StockHomeController(
@@ -338,3 +364,25 @@ private class DeferredChatRepository(
         requireNotNull(callback).invoke(Result.success(response))
     }
 }
+
+private class SnapshotStockRepository : StockRepository {
+    private val callbacks = mutableListOf<(Result<List<StockQuote>>) -> Unit>()
+    private var quotesBySymbol: Map<String, StockQuote> = emptyMap()
+
+    override fun getQuotes(callback: (Result<List<StockQuote>>) -> Unit) {
+        callbacks += callback
+    }
+
+    override fun getQuote(symbol: String): StockQuote =
+        quotesBySymbol[symbol.trim().uppercase()] ?: error("Unknown stock: $symbol")
+
+    fun complete(index: Int, result: Result<List<StockQuote>>) {
+        result.onSuccess { quotes -> quotesBySymbol = quotes.associateBy { it.symbol } }
+        callbacks[index](result)
+    }
+}
+
+private val CONTEXT_QUOTES = listOf(
+    StockQuote("AAPL", "苹果", "NASDAQ", 10.0, 1.0, 10.0, 9.0, 10.0, 8.0, 9.0, 100, listOf(9.0, 10.0)),
+    StockQuote("TSLA", "特斯拉", "NASDAQ", 20.0, -1.0, -5.0, 21.0, 22.0, 19.0, 21.0, 200, listOf(21.0, 20.0)),
+)

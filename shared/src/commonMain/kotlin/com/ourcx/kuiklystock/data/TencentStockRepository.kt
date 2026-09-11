@@ -1,6 +1,5 @@
 package com.ourcx.kuiklystock.data
 
-import com.ourcx.kuiklystock.domain.StockInsight
 import com.ourcx.kuiklystock.domain.StockQuote
 
 /** Production stock source backed by Tencent's multi-market quote endpoint. */
@@ -24,36 +23,6 @@ class TencentStockRepository(
     override fun getQuote(symbol: String): StockQuote =
         quotesBySymbol[normalizeSymbol(symbol)] ?: throw StockNotFoundException(symbol)
 
-    override fun getInsight(symbol: String): StockInsight {
-        val quote = getQuote(symbol)
-        val direction = when {
-            quote.changePercent >= 2.0 -> "强势上行"
-            quote.changePercent > 0.0 -> "震荡偏强"
-            quote.changePercent <= -2.0 -> "明显回落"
-            quote.changePercent < 0.0 -> "震荡偏弱"
-            else -> "窄幅整理"
-        }
-        val location = when {
-            quote.price >= quote.high -> "最新价位于日内高位"
-            quote.price <= quote.low -> "最新价接近日内低位"
-            quote.price >= quote.open -> "最新价高于开盘价"
-            else -> "最新价低于开盘价"
-        }
-        return StockInsight(
-            symbol = quote.symbol,
-            trendLabel = direction,
-            summary = "${quote.name}当前$direction，$location，日内振幅为${quote.intradayAmplitude()}%。",
-            signals = listOf(
-                location,
-                "较前收${if (quote.change >= 0) "上涨" else "下跌"}${quote.change.absoluteValue().format(2)}",
-            ),
-            risks = listOf(
-                "实时行情可能因网络或数据源调整出现延迟",
-                "短期价格波动不代表长期趋势",
-            ),
-            updatedAt = quote.updatedAt.ifBlank { "腾讯行情实时数据" },
-        )
-    }
 }
 
 internal fun parseTencentQuotes(
@@ -61,24 +30,27 @@ internal fun parseTencentQuotes(
     definitions: List<StockDefinition> = STOCKS,
 ): List<StockQuote> {
     val definitionByApiCode = definitions.associateBy(StockDefinition::apiCode)
-    val quotes = payload.lineSequence()
+    val quotesByApiCode = payload.lineSequence()
         .map(String::trim)
         .filter(String::isNotEmpty)
-        .mapNotNull { line ->
-            val match = RESPONSE_PATTERN.matchEntire(line) ?: return@mapNotNull null
-            val definition = definitionByApiCode[match.groupValues[1]] ?: return@mapNotNull null
+        .mapNotNull { line -> RESPONSE_PATTERN.matchEntire(line) }
+        .filter { match -> match.groupValues[1] in definitionByApiCode }
+        .groupBy { match -> match.groupValues[1] }
+
+    return definitions.map { definition ->
+        val matches = quotesByApiCode[definition.apiCode].orEmpty()
+        if (matches.size != 1) throw TencentStockException(INCOMPLETE_RESPONSE_MESSAGE)
+        val quote = matches.single().let { match ->
             val fields = match.groupValues[2].split('~')
             parseQuote(definition, fields)
-        }
-        .toList()
-
-    if (quotes.isEmpty()) throw TencentStockException(EMPTY_RESPONSE_MESSAGE)
-    return definitions.mapNotNull { definition ->
-        quotes.firstOrNull { quote -> quote.symbol == definition.symbol }
+        } ?: throw TencentStockException(INCOMPLETE_RESPONSE_MESSAGE)
+        quote
     }
 }
 
 private fun parseQuote(definition: StockDefinition, fields: List<String>): StockQuote? {
+    val returnedSymbol = fields.getOrNull(2)?.trim().orEmpty().substringBefore('.')
+    if (!returnedSymbol.equals(definition.symbol, ignoreCase = true)) return null
     val price = fields.decimalAt(3) ?: return null
     val previousClose = fields.decimalAt(4) ?: return null
     val open = fields.decimalAt(5) ?: previousClose
@@ -118,35 +90,14 @@ internal data class StockDefinition(
 )
 
 private fun List<String>.decimalAt(index: Int): Double? =
-    getOrNull(index)?.trim()?.toDoubleOrNull()
-
-private fun StockQuote.intradayAmplitude(): String =
-    (if (previousClose == 0.0) 0.0 else (high - low) / previousClose * 100.0).format(2)
-
-private fun Double.absoluteValue(): Double = if (this < 0) -this else this
-
-private fun Double.format(decimalPlaces: Int): String {
-    val scale = 10.0.pow(decimalPlaces)
-    val rounded = kotlin.math.round(this * scale) / scale
-    return rounded.toString().let { value ->
-        val parts = value.split('.')
-        val fraction = parts.getOrElse(1) { "" }.padEnd(decimalPlaces, '0').take(decimalPlaces)
-        if (decimalPlaces == 0) parts[0] else "${parts[0]}.$fraction"
-    }
-}
-
-private fun Double.pow(exponent: Int): Double {
-    var result = 1.0
-    repeat(exponent) { result *= this }
-    return result
-}
+    getOrNull(index)?.trim()?.toDoubleOrNull()?.takeIf { value -> value.isFinite() }
 
 private fun normalizeSymbol(symbol: String): String = symbol.trim().uppercase()
 
 class TencentStockException(message: String) : IllegalStateException(message)
 
 private val RESPONSE_PATTERN = Regex("""v_([A-Za-z0-9]+)=\"(.*)\";""")
-private const val EMPTY_RESPONSE_MESSAGE = "腾讯行情暂未返回有效数据，请稍后重试"
+private const val INCOMPLETE_RESPONSE_MESSAGE = "腾讯行情返回不完整，请稍后重试"
 
 internal val STOCKS = listOf(
     StockDefinition("sz000001", "000001", "SZSE", "平安银行"),

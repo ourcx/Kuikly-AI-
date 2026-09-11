@@ -40,13 +40,15 @@ internal class StockHomePage : BasePager() {
 
             override fun clear() = bridgeModule.clearOpenAiProxyUrl()
         }
+        val aiRepository = OpenAiChatRepository(
+            configurationProvider = bridgeModule::isOpenAiConfigured,
+            modelProvider = bridgeModule::openAiModel,
+            requestInvoker = bridgeModule::requestOpenAi,
+        )
         StockHomeController(
             stockRepository = TencentStockRepository(bridgeModule::requestTencentQuotes),
-            chatRepository = OpenAiChatRepository(
-                configurationProvider = bridgeModule::isOpenAiConfigured,
-                modelProvider = bridgeModule::openAiModel,
-                requestInvoker = bridgeModule::requestOpenAi,
-            ),
+            chatRepository = aiRepository,
+            insightRepository = aiRepository,
             serviceConfiguration = serviceConfiguration,
             onStateChanged = { state -> viewState = state },
         )

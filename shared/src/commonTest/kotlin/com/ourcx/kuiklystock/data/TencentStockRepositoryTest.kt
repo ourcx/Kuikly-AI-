@@ -27,8 +27,53 @@ class TencentStockRepositoryTest {
     }
 
     @Test
-    fun rejectsPayloadWithoutValidQuotes() {
+    fun rejectsPayloadWithoutEveryRequestedQuote() {
         assertFailsWith<TencentStockException> { parseTencentQuotes("invalid") }
+
+        val definitions = listOf(
+            StockDefinition("sz000001", "000001", "SZSE", "平安银行"),
+            StockDefinition("usAAPL", "AAPL", "NASDAQ", "苹果"),
+        )
+        val onlyOneQuote = quoteLine("usAAPL", "苹果", "AAPL.OQ", 326.57, 315.34, 316.67, 1.0, 11.23, 3.56, 326.74, 316.51)
+        assertFailsWith<TencentStockException> { parseTencentQuotes(onlyOneQuote, definitions) }
+    }
+
+    @Test
+    fun rejectsDuplicateOrMalformedRequestedQuote() {
+        val definition = StockDefinition("usAAPL", "AAPL", "NASDAQ", "苹果")
+        val validQuote = quoteLine("usAAPL", "苹果", "AAPL.OQ", 326.57, 315.34, 316.67, 1.0, 11.23, 3.56, 326.74, 316.51)
+
+        assertFailsWith<TencentStockException> {
+            parseTencentQuotes("$validQuote\n$validQuote", listOf(definition))
+        }
+        assertFailsWith<TencentStockException> {
+            parseTencentQuotes(quoteLine("usAAPL", "苹果", "AAPL.OQ", Double.NaN, 315.34, 316.67, 1.0, 11.23, 3.56, 326.74, 316.51).replace("NaN", "bad-price"), listOf(definition))
+        }
+        assertFailsWith<TencentStockException> {
+            parseTencentQuotes(quoteLine("usAAPL", "苹果", "MSFT.OQ", 326.57, 315.34, 316.67, 1.0, 11.23, 3.56, 326.74, 316.51), listOf(definition))
+        }
+    }
+
+    @Test
+    fun repositoryKeepsLastCompleteCacheWhenNextPayloadIsIncomplete() {
+        val payloads = ArrayDeque(
+            listOf(
+                STOCKS.joinToString("\n") { definition ->
+                    quoteLine(definition.apiCode, definition.fallbackName, definition.symbol, 10.0, 9.0, 9.5, 100.0, 1.0, 11.11, 10.5, 9.5)
+                },
+                quoteLine(STOCKS.first().apiCode, STOCKS.first().fallbackName, STOCKS.first().symbol, 11.0, 10.0, 10.5, 100.0, 1.0, 10.0, 11.5, 10.5),
+            ),
+        )
+        val repository = TencentStockRepository { _, callback -> callback(Result.success(payloads.removeFirst())) }
+        var firstResult: Result<List<com.ourcx.kuiklystock.domain.StockQuote>>? = null
+        var secondResult: Result<List<com.ourcx.kuiklystock.domain.StockQuote>>? = null
+
+        repository.getQuotes { firstResult = it }
+        repository.getQuotes { secondResult = it }
+
+        assertTrue(requireNotNull(firstResult).isSuccess)
+        assertTrue(requireNotNull(secondResult).isFailure)
+        assertEquals(10.0, repository.getQuote(STOCKS.last().symbol).price)
     }
 }
 

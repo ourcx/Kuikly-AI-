@@ -1,6 +1,7 @@
 package com.ourcx.kuiklystock.presentation
 
 import com.ourcx.kuiklystock.data.InMemoryStockRepository
+import com.ourcx.kuiklystock.data.InsightRepository
 import com.ourcx.kuiklystock.data.StockNotFoundException
 import com.ourcx.kuiklystock.data.StockRepository
 import com.ourcx.kuiklystock.domain.LoadState
@@ -20,6 +21,7 @@ enum class MarketDemoState {
 
 class MarketController(
     private val stockRepository: StockRepository = InMemoryStockRepository(),
+    private val insightRepository: InsightRepository? = stockRepository as? InsightRepository,
     private val onStateChanged: (MarketState) -> Unit = {},
 ) {
     var state: MarketState = MarketState()
@@ -27,13 +29,16 @@ class MarketController(
 
     private var originalQuotesSnapshot: List<StockQuote> = emptyList()
     private var sourceStatus: MarketSourceStatus = MarketSourceStatus.LOADING
+    private var loadGeneration: Long = 0
 
     /** Intent: Load quotes into a stable source snapshot and publish the derived market state under current discovery controls. */
     fun load() {
+        val requestGeneration = ++loadGeneration
         sourceStatus = MarketSourceStatus.LOADING
         updateState(state.copy(quotes = LoadState.Loading, totalCount = 0))
         runCatching {
             stockRepository.getQuotes { result ->
+                if (requestGeneration != loadGeneration) return@getQuotes
                 result.fold(
                 onSuccess = { quotes ->
                     originalQuotesSnapshot = quotes
@@ -56,6 +61,7 @@ class MarketController(
                 )
             }
         }.onFailure { error ->
+            if (requestGeneration != loadGeneration) return@onFailure
             sourceStatus = MarketSourceStatus.ERROR
             updateState(
                 state.copy(
@@ -92,6 +98,9 @@ class MarketController(
     }
 
     fun retry() = load()
+
+    /** Returns the latest complete source snapshot without discovery filters or transient loading state. */
+    fun completeQuotesSnapshot(): List<StockQuote> = originalQuotesSnapshot
 
     /** Intent: Normalize the query and republish results using case-insensitive symbol/name/exchange matching. */
     fun updateQuery(query: String) {
@@ -149,7 +158,10 @@ class MarketController(
     }
 
     /** Intent: Resolve one stock detail request from repository data and return either complete content or a user-readable error state. */
-    fun selectStock(symbol: String): StockDetailState {
+    fun selectStock(
+        symbol: String,
+        onDetailChanged: (StockDetailState) -> Unit = {},
+    ): StockDetailState {
         val normalizedSymbol = symbol.trim()
         if (normalizedSymbol.isEmpty()) {
             return StockDetailState(
@@ -158,26 +170,37 @@ class MarketController(
             )
         }
 
-        return runCatching {
-            StockDetailContent(
-                quote = stockRepository.getQuote(normalizedSymbol),
-                insight = stockRepository.getInsight(normalizedSymbol),
+        val quote = runCatching { stockRepository.getQuote(normalizedSymbol) }.getOrElse { error ->
+            return StockDetailState(
+                symbol = normalizedSymbol,
+                content = LoadState.Error(error.readableMessage()),
             )
-        }.fold(
-            onSuccess = { content ->
-                recordRecentQuote(content.quote)
-                StockDetailState(
-                    symbol = content.quote.symbol,
-                    content = LoadState.Content(content),
-                )
-            },
-            onFailure = { error ->
-                StockDetailState(
-                    symbol = normalizedSymbol,
-                    content = LoadState.Error(error.readableMessage()),
-                )
-            },
+        }
+        recordRecentQuote(quote)
+
+        var detailState = StockDetailState(
+            symbol = quote.symbol,
+            content = LoadState.Content(StockDetailContent(quote)),
         )
+        val repository = insightRepository
+        if (repository == null) {
+            return detailState.withInsight(LoadState.Error(INSIGHT_UNAVAILABLE_MESSAGE))
+        }
+        repository.getInsight(quote) { result ->
+            detailState = detailState.withInsight(
+                result.fold(
+                    onSuccess = { insight -> LoadState.Content(insight) },
+                    onFailure = { error -> LoadState.Error(error.readableMessage()) },
+                ),
+            )
+            onDetailChanged(detailState)
+        }
+        return detailState
+    }
+
+    private fun StockDetailState.withInsight(insight: LoadState<com.ourcx.kuiklystock.domain.StockInsight>): StockDetailState {
+        val detailContent = (content as? LoadState.Content<StockDetailContent>)?.value ?: return this
+        return copy(content = LoadState.Content(detailContent.copy(insight = insight)))
     }
 
     private fun updateDiscoveryState(newState: MarketState) {
@@ -237,6 +260,7 @@ internal fun Throwable.readableMessage(): String = when (this) {
 private const val DEMO_ERROR_MESSAGE = "行情加载失败，请重试"
 private const val EMPTY_SYMBOL_MESSAGE = "股票代码不能为空"
 private const val DEFAULT_ERROR_MESSAGE = "服务暂时不可用，请重试"
+private const val INSIGHT_UNAVAILABLE_MESSAGE = "AI 洞察服务暂不可用"
 private const val MAX_RECENT_QUOTES = 3
 
 private enum class MarketSourceStatus {

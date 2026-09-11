@@ -41,7 +41,7 @@ data class MarketState(
 
 data class StockDetailContent(
     val quote: StockQuote,
-    val insight: StockInsight,
+    val insight: LoadState<StockInsight> = LoadState.Loading,
 )
 
 data class StockDetailState(
