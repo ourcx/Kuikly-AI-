@@ -69,6 +69,28 @@ fun ViewContainer<*, *>.stockCard(quote: StockQuote, onClick: ((String) -> Unit)
     }
 }
 
+/** Inline AI citation that keeps the current quote and its trajectory in one visual group. */
+fun ViewContainer<*, *>.embeddedTrendCard(quote: StockQuote, onClick: ((String) -> Unit)? = null) {
+    View {
+        attr {
+            padding(DesignTokens.Spacing.XS)
+            borderRadius(DesignTokens.Radius.LG)
+            backgroundColor(DesignTokens.Colors.surfaceElevated)
+            margin(top = DesignTokens.Spacing.XS, bottom = DesignTokens.Spacing.MD)
+        }
+        Text {
+            attr {
+                text("AI 行情引用 · 点击查看详情")
+                fontSize(DesignTokens.Typography.CAPTION)
+                color(DesignTokens.Colors.accentTertiary)
+                margin(left = DesignTokens.Spacing.SM, top = DesignTokens.Spacing.XS)
+            }
+        }
+        stockCard(quote, onClick)
+        sparkline(quote)
+    }
+}
+
 /** Reusable two-column quote metric grid. */
 fun ViewContainer<*, *>.metricGrid(quote: StockQuote) {
     View {

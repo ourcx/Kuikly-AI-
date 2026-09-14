@@ -52,7 +52,7 @@ class ChatAndHomeControllerTest {
         assertEquals("Analyze Apple", assertIs<ChatContentBlock.Markdown>(controller.state.messages[0].blocks.single()).text)
         val assistant = controller.state.messages[1]
         assertEquals(ChatMessageStatus.COMPLETE, assistant.status)
-        assertEquals(3, assistant.blocks.size)
+        assertEquals(2, assistant.blocks.size)
         assertEquals("conversation-1", controller.state.conversationId)
         assertEquals(WorkBuddyConnectionStatus.AVAILABLE, controller.state.connectionStatus)
         assertFalse(controller.state.isSending)
@@ -100,6 +100,34 @@ class ChatAndHomeControllerTest {
         controller.send()
 
         assertEquals("conversation-7", repository.requests.last().conversationId)
+    }
+
+    @Test
+    fun chatPublishesPartialAssistantContentBeforeCompletion() {
+        val repository = StreamingDeferredChatRepository()
+        val observedTexts = mutableListOf<String>()
+        val controller = ChatController(
+            chatRepository = repository,
+            onStateChanged = { state ->
+                val markdown = state.messages.lastOrNull()?.blocks?.firstOrNull() as? ChatContentBlock.Markdown
+                if (markdown != null) observedTexts += markdown.text
+            },
+        )
+        controller.updateDraft("Analyze AAPL")
+        controller.send()
+
+        repository.emit("## Price action")
+
+        assertTrue(controller.state.isSending)
+        assertEquals(ChatMessageStatus.GENERATING, controller.state.messages.last().status)
+        assertEquals("## Price action", observedTexts.last())
+
+        repository.emit("\n{{trend:AAPL}}")
+        repository.complete(ChatResponse(answer = "## Price action\n{{trend:AAPL}}"))
+
+        assertFalse(controller.state.isSending)
+        assertEquals(ChatMessageStatus.COMPLETE, controller.state.messages.last().status)
+        assertIs<ChatContentBlock.EmbeddedTrend>(controller.state.messages.last().blocks[1])
     }
 
     @Test
@@ -377,6 +405,33 @@ private class DeferredChatRepository(
     override fun ask(request: ChatRequest, callback: (Result<ChatResponse>) -> Unit) {
         requests += request
         this.callback = callback
+    }
+
+    fun complete(response: ChatResponse) {
+        requireNotNull(callback).invoke(Result.success(response))
+    }
+}
+
+private class StreamingDeferredChatRepository : ChatRepository {
+    override val isConfigured: Boolean = true
+    private var onDelta: ((String) -> Unit)? = null
+    private var callback: ((Result<ChatResponse>) -> Unit)? = null
+
+    override fun ask(request: ChatRequest, callback: (Result<ChatResponse>) -> Unit) {
+        error("Streaming entry point should be used")
+    }
+
+    override fun askStreaming(
+        request: ChatRequest,
+        onDelta: (String) -> Unit,
+        callback: (Result<ChatResponse>) -> Unit,
+    ) {
+        this.onDelta = onDelta
+        this.callback = callback
+    }
+
+    fun emit(delta: String) {
+        requireNotNull(onDelta).invoke(delta)
     }
 
     fun complete(response: ChatResponse) {

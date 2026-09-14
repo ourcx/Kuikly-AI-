@@ -16,7 +16,6 @@ import com.ourcx.kuiklystock.domain.AppTab
 import com.ourcx.kuiklystock.domain.MarketFilter
 import com.ourcx.kuiklystock.domain.MarketSort
 import com.ourcx.kuiklystock.domain.StockHomeState
-import com.ourcx.kuiklystock.presentation.MarketDemoState
 import com.ourcx.kuiklystock.presentation.StockHomeController
 import com.ourcx.kuiklystock.theme.DesignTokens
 import com.ourcx.kuiklystock.ui.component.aiResearchContentSlot
@@ -54,12 +53,17 @@ internal class StockHomePage : BasePager() {
         val aiRepository = OpenAiChatRepository(
             configurationProvider = bridgeModule::isOpenAiConfigured,
             modelProvider = bridgeModule::openAiModel,
+            streamingRequestInvoker = bridgeModule::requestOpenAiStream,
             requestInvoker = bridgeModule::requestOpenAi,
         )
         val fixtureRepository = InMemoryStockRepository()
         StockHomeController(
             stockRepository = ResilientStockRepository(
-                remoteRepository = TencentStockRepository(bridgeModule::requestTencentQuotes),
+                remoteRepository = TencentStockRepository(
+                    requestInvoker = bridgeModule::requestTencentQuotes,
+                    initialCustomCodes = bridgeModule.customStockCodes(),
+                    onCustomCodesChanged = bridgeModule::saveCustomStockCodes,
+                ),
                 fixtureRepository = fixtureRepository,
             ),
             chatRepository = ResilientChatRepository(aiRepository, InMemoryChatRepository()),
@@ -99,7 +103,9 @@ internal class StockHomePage : BasePager() {
                     onBack = context.controller::backFromDetail,
                     onRetryInsight = context.controller::retryDetailInsight,
                     onRetryMarket = context.controller.marketController::retry,
-                    onSelectMarketDemo = context.controller.marketController::showDemoState,
+                    onLoadMoreMarket = context.controller.marketController::loadMore,
+                    onUpdateAddStockDraft = context.controller.marketController::updateAddSymbolDraft,
+                    onAddStock = context.controller.marketController::addStock,
                     onSelectStock = { symbol -> context.controller.selectStock(symbol) },
                     onUpdateMarketQuery = context.controller.marketController::updateQuery,
                     onSelectMarketFilter = context.controller.marketController::selectFilter,
@@ -134,7 +140,9 @@ fun ViewContainer<*, *>.stockHomeContent(
     onBack: () -> Unit,
     onRetryInsight: () -> Unit,
     onRetryMarket: () -> Unit,
-    onSelectMarketDemo: (MarketDemoState) -> Unit,
+    onLoadMoreMarket: () -> Unit,
+    onUpdateAddStockDraft: (String) -> Unit,
+    onAddStock: () -> Unit,
     onSelectStock: (String) -> Unit,
     onUpdateMarketQuery: (String) -> Unit,
     onSelectMarketFilter: (MarketFilter) -> Unit,
@@ -165,7 +173,9 @@ fun ViewContainer<*, *>.stockHomeContent(
                 AppTab.MARKET -> marketContentSlot(
                     state = state.market,
                     onRetry = onRetryMarket,
-                    onSelectDemo = onSelectMarketDemo,
+                    onLoadMore = onLoadMoreMarket,
+                    onUpdateAddStockDraft = onUpdateAddStockDraft,
+                    onAddStock = onAddStock,
                     onSelectStock = onSelectStock,
                     onUpdateQuery = onUpdateMarketQuery,
                     onSelectFilter = onSelectMarketFilter,

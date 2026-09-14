@@ -2,6 +2,7 @@ package com.ourcx.kuiklystock.base
 
 import com.tencent.kuikly.core.base.toInt
 import com.tencent.kuikly.core.module.CallbackFn
+import com.tencent.kuikly.core.module.CallbackRef
 import com.tencent.kuikly.core.module.Module
 import com.tencent.kuikly.core.nvi.serialization.json.JSONArray
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
@@ -109,6 +110,35 @@ internal class BridgeModule : Module() {
         }
     }
 
+    fun requestOpenAiStream(
+        payload: String,
+        onDelta: (String) -> Unit,
+        callback: (Result<String>) -> Unit,
+    ) {
+        val params = JSONObject().put(OPENAI_PAYLOAD, payload)
+        var callbackRef: CallbackRef? = null
+        fun finish(result: Result<String>) {
+            callback(result)
+            callbackRef?.let(::removeCallback)
+            callbackRef = null
+        }
+        callbackRef = toNative(true, REQUEST_OPENAI_STREAM, params.toString(), { response ->
+            if (response == null) {
+                finish(Result.failure(IllegalStateException(OPENAI_EMPTY_RESPONSE_ERROR)))
+                return@toNative
+            }
+            if (!response.optBoolean(WORK_BUDDY_SUCCESS, false)) {
+                finish(Result.failure(IllegalStateException(response.optString(RESPONSE_ERROR, DEFAULT_REQUEST_ERROR))))
+                return@toNative
+            }
+            when (response.optString(STREAM_EVENT)) {
+                STREAM_DELTA -> onDelta(response.optString(WORK_BUDDY_DATA))
+                STREAM_DONE -> finish(Result.success(response.optString(WORK_BUDDY_DATA)))
+                else -> finish(Result.failure(IllegalStateException(INVALID_STREAM_EVENT_ERROR)))
+            }
+        }, false).callbackRef
+    }
+
     fun requestTencentQuotes(codes: List<String>, callback: (Result<String>) -> Unit) {
         val codeArray = JSONArray().apply {
             codes.forEach { put(it) }
@@ -120,6 +150,17 @@ internal class BridgeModule : Module() {
                     ?: Result.failure(IllegalStateException(TENCENT_STOCK_EMPTY_RESPONSE_ERROR)),
             )
         }
+    }
+
+    fun customStockCodes(): List<String> = syncCallNativeMethod(GET_CUSTOM_STOCK_CODES, null, null)
+        .split(',')
+        .map(String::trim)
+        .filter(String::isNotEmpty)
+
+    fun saveCustomStockCodes(codes: List<String>) {
+        val codeArray = JSONArray().apply { codes.forEach { put(it) } }
+        val params = JSONObject().put(TENCENT_STOCK_CODES, codeArray)
+        syncCallNativeMethod(SAVE_CUSTOM_STOCK_CODES, params, null)
     }
 
     private fun parseNativeResponse(response: JSONObject): Result<String> =
@@ -160,7 +201,10 @@ internal class BridgeModule : Module() {
         const val SAVE_OPENAI_CONFIGURATION = "saveOpenAiConfiguration"
         const val CLEAR_OPENAI_CONFIGURATION = "clearOpenAiConfiguration"
         const val REQUEST_OPENAI = "requestOpenAi"
+        const val REQUEST_OPENAI_STREAM = "requestOpenAiStream"
         const val REQUEST_TENCENT_QUOTES = "requestTencentQuotes"
+        const val GET_CUSTOM_STOCK_CODES = "getCustomStockCodes"
+        const val SAVE_CUSTOM_STOCK_CODES = "saveCustomStockCodes"
 
         private const val OPENAI_PAYLOAD = "payload"
         private const val TENCENT_STOCK_CODES = "codes"
@@ -170,8 +214,12 @@ internal class BridgeModule : Module() {
         private const val WORK_BUDDY_SUCCESS = "success"
         private const val WORK_BUDDY_DATA = "data"
         private const val RESPONSE_ERROR = "error"
+        private const val STREAM_EVENT = "event"
+        private const val STREAM_DELTA = "delta"
+        private const val STREAM_DONE = "done"
         private const val DEFAULT_REQUEST_ERROR = "请求失败"
         private const val OPENAI_EMPTY_RESPONSE_ERROR = "OpenAI 响应为空"
+        private const val INVALID_STREAM_EVENT_ERROR = "OpenAI 流式响应事件无效"
         private const val TENCENT_STOCK_EMPTY_RESPONSE_ERROR = "腾讯行情请求未返回结果"
         private const val INVALID_WORK_BUDDY_PROXY_URL = "请输入 HTTPS 地址，或本地网络 HTTP 地址"
     }

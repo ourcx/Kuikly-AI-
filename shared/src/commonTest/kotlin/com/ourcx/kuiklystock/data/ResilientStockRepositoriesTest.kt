@@ -26,6 +26,30 @@ class ResilientStockRepositoriesTest {
     }
 
     @Test
+    fun firstPageFallbackReturnsCompleteFixtureAndSwitchesDirectory() {
+        val fixture = InMemoryStockRepository()
+        val remote = object : StockRepository {
+            override val directory = listOf(StockDirectoryEntry("REMOTE", "Remote", "TEST"))
+
+            override fun getQuotes(callback: (Result<List<StockQuote>>) -> Unit) =
+                callback(Result.failure(IllegalStateException("offline")))
+
+            override fun getQuotesPage(offset: Int, limit: Int, callback: (Result<List<StockQuote>>) -> Unit) =
+                callback(Result.failure(IllegalStateException("offline")))
+
+            override fun getQuote(symbol: String): StockQuote = error("offline")
+        }
+        val repository = ResilientStockRepository(remote, fixture)
+        var result: Result<List<StockQuote>>? = null
+
+        assertEquals(1, repository.directory.size)
+        repository.getQuotesPage(offset = 0, limit = 2) { result = it }
+
+        assertEquals(5, requireNotNull(result).getOrThrow().size)
+        assertTrue(repository.directory.isEmpty())
+    }
+
+    @Test
     fun fallsBackToFixtureInsightWhenRemoteIsUnavailable() {
         val fixture = InMemoryStockRepository()
         val quote = fixture.getQuote("AAPL")

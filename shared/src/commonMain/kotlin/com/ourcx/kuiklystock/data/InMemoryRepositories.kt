@@ -66,6 +66,9 @@ class InMemoryChatRepository : ChatRepository {
         val contextQuote = request.context.quotes.firstOrNull { quote ->
             normalizedQuestion.uppercase().contains(quote.symbol.uppercase()) || normalizedQuestion.contains(quote.name)
         }
+        if (contextQuote == null && normalizedQuestion.isPortfolioQuestion()) {
+            return createPortfolioResponse(request)
+        }
         val matchedSymbol = contextQuote?.symbol ?: findMentionedSymbol(normalizedQuestion) ?: DEFAULT_CHAT_SYMBOL
         val quote = contextQuote ?: QUOTES_BY_SYMBOL.getValue(matchedSymbol).toChatQuoteContext()
         val answer = buildString {
@@ -74,6 +77,8 @@ class InMemoryChatRepository : ChatRepository {
             appendLine("- 最新价：${quote.price}")
             appendLine("- 涨跌幅：${quote.changePercent}%")
             appendLine("- 观察：${quote.localObservation()}")
+            appendLine()
+            appendLine("{{trend:${quote.symbol}}}")
             appendLine()
             appendLine("> 内容仅供演示，不构成投资建议")
         }
@@ -86,6 +91,33 @@ class InMemoryChatRepository : ChatRepository {
         )
     }
 
+    private fun createPortfolioResponse(request: ChatRequest): ChatResponse {
+        val candidates = request.context.quotes.ifEmpty {
+            FIXTURE_QUOTES.map(StockQuote::toChatQuoteContext)
+        }
+        // 组合问题优先展示波动更明显的标的，确保离线演示也能产出多卡片和迷你走势图。
+        val selectedQuotes = candidates
+            .sortedByDescending { quote -> kotlin.math.abs(quote.changePercent) }
+            .take(PORTFOLIO_RESULT_LIMIT)
+        val answer = buildString {
+            appendLine("## 行情组合观察")
+            appendLine()
+            selectedQuotes.forEach { quote ->
+                appendLine("- **${quote.name}（${quote.symbol}）**：${quote.price}，涨跌幅 ${quote.changePercent}%；${quote.localObservation()}")
+                appendLine("{{trend:${quote.symbol}}}")
+            }
+            appendLine()
+            appendLine("> 内容仅供演示，不构成投资建议")
+        }
+        return ChatResponse(
+            answer = answer,
+            conversationId = request.conversationId,
+            symbols = selectedQuotes.map(ChatQuoteContext::symbol),
+            showTrend = true,
+            provider = ChatProvider.LOCAL,
+        )
+    }
+
     private fun findMentionedSymbol(question: String): String? {
         val normalizedQuestion = question.uppercase()
         return FIXTURE_QUOTES.firstOrNull { quote ->
@@ -93,6 +125,9 @@ class InMemoryChatRepository : ChatRepository {
         }?.symbol
     }
 }
+
+private fun String.isPortfolioQuestion(): Boolean =
+    PORTFOLIO_QUESTION_KEYWORDS.any { keyword -> contains(keyword, ignoreCase = true) }
 
 private fun StockQuote.toChatQuoteContext(): ChatQuoteContext = ChatQuoteContext(
     symbol = symbol,
@@ -112,8 +147,10 @@ private fun ChatQuoteContext.localObservation(): String = when {
 private fun normalizeSymbol(symbol: String): String = symbol.trim().uppercase()
 
 private const val DEFAULT_CHAT_SYMBOL = "00700"
+private const val PORTFOLIO_RESULT_LIMIT = 3
 private const val FAILURE_KEYWORD = "失败"
 private const val DEMONSTRATION_FAILURE_MESSAGE = "演示聊天服务暂时不可用，请重试"
+private val PORTFOLIO_QUESTION_KEYWORDS = listOf("自选股", "组合", "多只", "哪些", "梳理")
 
 private val FIXTURE_QUOTES = listOf(
     StockQuote(

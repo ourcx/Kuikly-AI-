@@ -18,6 +18,9 @@ sealed interface ChatContentBlock {
 
     data class Trend(val symbol: String) : ChatContentBlock
 
+    /** One inline research card combining the quote snapshot and its price trajectory. */
+    data class EmbeddedTrend(val symbol: String) : ChatContentBlock
+
     data class Error(val message: String) : ChatContentBlock
 }
 

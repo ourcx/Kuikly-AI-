@@ -73,10 +73,16 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
                 requestOpenAi(params, callback)
                 null
             }
+            "requestOpenAiStream" -> {
+                requestOpenAiStream(params, callback)
+                null
+            }
             "requestTencentQuotes" -> {
                 requestTencentQuotes(params, callback)
                 null
             }
+            "getCustomStockCodes" -> preferences.getString(PREF_CUSTOM_STOCK_CODES, "").orEmpty()
+            "saveCustomStockCodes" -> saveCustomStockCodes(params)
             else -> callback?.invoke(mapOf("code" to -1, "message" to "Method not found"))
         }
     }
@@ -107,6 +113,37 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
         }
     }
 
+    private fun requestOpenAiStream(params: String?, callback: KuiklyRenderCallback?) {
+        val baseUrl = openAiProxyUrl()
+        val token = openAiToken()
+        if (baseUrl == null || token.isEmpty() || openAiModel().isEmpty()) {
+            callbackOnMainThread(callback, failureResponse("OpenAI Base URL、Token 或 Model 尚未配置"))
+            return
+        }
+        val payload = runCatching {
+            JSONObject(params ?: "{}").optString(OPENAI_PAYLOAD).takeIf { it.isNotBlank() }
+                ?: throw IllegalArgumentException("OpenAI 请求内容为空")
+        }.getOrElse { error ->
+            callbackOnMainThread(callback, failureResponse(error.message ?: "OpenAI 请求无效"))
+            return
+        }
+
+        networkExecutor.execute {
+            runCatching {
+                postOpenAiStream(chatCompletionsUrl(baseUrl), token, payload) { delta ->
+                    callbackOnMainThread(callback, streamResponse(STREAM_DELTA, delta))
+                }
+            }.fold(
+                onSuccess = { responseId ->
+                    callbackOnMainThread(callback, streamResponse(STREAM_DONE, responseId))
+                },
+                onFailure = { error ->
+                    callbackOnMainThread(callback, failureResponse(readableOpenAiError(error)))
+                },
+            )
+        }
+    }
+
     private fun requestTencentQuotes(params: String?, callback: KuiklyRenderCallback?) {
         val codes = runCatching {
             val values = JSONObject(params ?: "{}").getJSONArray(TENCENT_STOCK_CODES)
@@ -129,6 +166,21 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
                 )
             callbackOnMainThread(callback, response)
         }
+    }
+
+    private fun saveCustomStockCodes(params: String?): Boolean {
+        val codes = runCatching {
+            val values = JSONObject(params ?: "{}").getJSONArray(TENCENT_STOCK_CODES)
+            buildList {
+                for (index in 0 until values.length()) {
+                    values.optString(index)
+                        .takeIf(STOCK_CODE_PATTERN::matches)
+                        ?.let(::add)
+                }
+            }.distinct()
+        }.getOrElse { return false }
+        preferences.edit().putString(PREF_CUSTOM_STOCK_CODES, codes.joinToString(",")).apply()
+        return true
     }
 
     private fun getTencentQuotes(codes: List<String>): String {
@@ -199,6 +251,53 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
         }
     }
 
+    private fun postOpenAiStream(
+        endpoint: URL,
+        token: String,
+        payload: String,
+        onDelta: (String) -> Unit,
+    ): String {
+        val connection = endpoint.openConnection() as HttpURLConnection
+        return try {
+            connection.requestMethod = "POST"
+            connection.connectTimeout = CONNECT_TIMEOUT_MILLIS
+            connection.readTimeout = STREAM_READ_TIMEOUT_MILLIS
+            connection.doOutput = true
+            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            connection.setRequestProperty("Accept", "text/event-stream")
+            connection.setRequestProperty("Authorization", "Bearer $token")
+            connection.outputStream.use { output -> output.write(payload.toByteArray(Charsets.UTF_8)) }
+
+            val statusCode = connection.responseCode
+            if (statusCode !in 200..299) {
+                val detail = readLimited(connection.errorStream, MAX_ERROR_BODY_CHARS)
+                throw OpenAiHttpException(statusCode, sanitizeErrorDetail(detail))
+            }
+
+            var responseId = ""
+            connection.inputStream.bufferedReader(Charsets.UTF_8).useLines { lines ->
+                lines.forEach { line ->
+                    if (!line.startsWith(SSE_DATA_PREFIX)) return@forEach
+                    val eventData = line.removePrefix(SSE_DATA_PREFIX).trim()
+                    if (eventData.isEmpty() || eventData == SSE_DONE) return@forEach
+                    val chunk = JSONObject(eventData)
+                    if (responseId.isEmpty()) responseId = chunk.optString("id")
+                    val delta = chunk.optJSONArray("choices")
+                        ?.optJSONObject(0)
+                        ?.optJSONObject("delta")
+                    val content = delta
+                        ?.takeUnless { it.isNull("content") }
+                        ?.optString("content")
+                        .orEmpty()
+                    if (content.isNotEmpty()) onDelta(content)
+                }
+            }
+            responseId
+        } finally {
+            connection.disconnect()
+        }
+    }
+
     private fun callbackOnMainThread(callback: KuiklyRenderCallback?, response: Map<String, Any>) {
         if (callback == null) return
         mainHandler.post { callback.invoke(response) }
@@ -209,6 +308,9 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
 
     private fun failureResponse(error: String): Map<String, Any> =
         mapOf(WORK_BUDDY_SUCCESS to false, WORK_BUDDY_ERROR to error)
+
+    private fun streamResponse(event: String, data: String): Map<String, Any> =
+        mapOf(WORK_BUDDY_SUCCESS to true, STREAM_EVENT to event, WORK_BUDDY_DATA to data)
 
     private fun readableOpenAiError(error: Throwable): String = when (error) {
         is OpenAiHttpException -> buildString {
@@ -307,8 +409,14 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
         private const val WORK_BUDDY_SUCCESS = "success"
         private const val WORK_BUDDY_DATA = "data"
         private const val WORK_BUDDY_ERROR = "error"
+        private const val STREAM_EVENT = "event"
+        private const val STREAM_DELTA = "delta"
+        private const val STREAM_DONE = "done"
+        private const val SSE_DATA_PREFIX = "data:"
+        private const val SSE_DONE = "[DONE]"
         private const val CONNECT_TIMEOUT_MILLIS = 10_000
         private const val READ_TIMEOUT_MILLIS = 30_000
+        private const val STREAM_READ_TIMEOUT_MILLIS = 120_000
         private const val STOCK_READ_TIMEOUT_MILLIS = 10_000
         private const val MAX_ERROR_BODY_CHARS = 4_096
         private const val MAX_SUCCESS_BODY_CHARS = 1_000_000
@@ -317,6 +425,7 @@ class KRBridgeModule : KuiklyRenderBaseModule() {
         private const val PREF_OPENAI_PROXY_URL = "openai_proxy_url"
         private const val PREF_OPENAI_TOKEN = "openai_token"
         private const val PREF_OPENAI_MODEL = "openai_model"
+        private const val PREF_CUSTOM_STOCK_CODES = "custom_stock_codes"
         private const val INVALID_OPENAI_URL = "请输入 HTTPS 地址，或本地网络 HTTP 地址"
         private const val OPENAI_TOKEN = "token"
         private const val OPENAI_MODEL = "model"

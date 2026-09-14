@@ -18,6 +18,7 @@ import kotlinx.serialization.json.jsonPrimitive
 class OpenAiChatRepository(
     private val configurationProvider: () -> Boolean,
     private val modelProvider: () -> String,
+    private val streamingRequestInvoker: ((payload: String, onDelta: (String) -> Unit, callback: (Result<String>) -> Unit) -> Unit)? = null,
     private val requestInvoker: (payload: String, callback: (Result<String>) -> Unit) -> Unit,
 ) : ChatRepository, InsightRepository {
     override val isConfigured: Boolean
@@ -39,6 +40,50 @@ class OpenAiChatRepository(
                 callback(
                     nativeResult.fold(
                         onSuccess = { responseJson -> decodeResponse(request, responseJson) },
+                        onFailure = { error -> Result.failure(OpenAiChatException(REQUEST_ERROR, error)) },
+                    ),
+                )
+            }
+        } catch (error: Throwable) {
+            callback(Result.failure(OpenAiChatException(REQUEST_ERROR, error)))
+        }
+    }
+
+    override fun askStreaming(
+        request: ChatRequest,
+        onDelta: (String) -> Unit,
+        callback: (Result<ChatResponse>) -> Unit,
+    ) {
+        val streamInvoker = streamingRequestInvoker
+        if (streamInvoker == null) {
+            super<ChatRepository>.askStreaming(request, onDelta, callback)
+            return
+        }
+        if (!isConfigured) {
+            callback(Result.failure(OpenAiChatException(UNCONFIGURED_ERROR)))
+            return
+        }
+        val payload = runCatching { json.encodeToString(request.toOpenAiRequest(modelProvider(), stream = true)) }
+            .getOrElse { error ->
+                callback(Result.failure(OpenAiChatException(ENCODING_ERROR, error)))
+                return
+            }
+        val answer = StringBuilder()
+        try {
+            streamInvoker(
+                payload,
+                { delta ->
+                    if (delta.isNotEmpty()) {
+                        answer.append(delta)
+                        onDelta(delta)
+                    }
+                },
+            ) { nativeResult ->
+                callback(
+                    nativeResult.fold(
+                        onSuccess = { conversationId ->
+                            createChatResponse(request, answer.toString(), conversationId)
+                        },
                         onFailure = { error -> Result.failure(OpenAiChatException(REQUEST_ERROR, error)) },
                     ),
                 )
@@ -78,13 +123,26 @@ class OpenAiChatRepository(
             ?: throw OpenAiChatException(DECODING_ERROR)
         val answer = response.extractOutputText().takeIf(String::isNotBlank)
             ?: throw OpenAiChatException(EMPTY_ANSWER_ERROR)
+        createChatResponse(request, answer, response["id"]?.jsonPrimitive?.content).getOrThrow()
+    }
+
+    private fun createChatResponse(
+        request: ChatRequest,
+        answer: String,
+        conversationId: String?,
+    ): Result<ChatResponse> = runCatching {
+        val completedAnswer = answer.takeIf(String::isNotBlank)
+            ?: throw OpenAiChatException(EMPTY_ANSWER_ERROR)
         val referencedSymbols = request.context.quotes
-            .filter { quote -> answer.contains(quote.symbol, ignoreCase = true) || request.question.contains(quote.symbol, ignoreCase = true) }
+            .filter { quote ->
+                completedAnswer.contains(quote.symbol, ignoreCase = true) ||
+                    request.question.contains(quote.symbol, ignoreCase = true)
+            }
             .map { quote -> quote.symbol }
             .distinct()
         ChatResponse(
-            answer = answer,
-            conversationId = response["id"]?.jsonPrimitive?.content,
+            answer = completedAnswer,
+            conversationId = conversationId?.takeIf(String::isNotBlank),
             symbols = referencedSymbols,
             showTrend = referencedSymbols.isNotEmpty(),
             provider = ChatProvider.OPENAI,
@@ -126,6 +184,7 @@ class OpenAiChatRepository(
 private data class OpenAiChatCompletionsRequest(
     val model: String,
     val messages: List<OpenAiMessage>,
+    val stream: Boolean = false,
 )
 
 @Serializable
@@ -139,7 +198,7 @@ private data class OpenAiInsightPayload(
     val risks: List<String>,
 )
 
-private fun ChatRequest.toOpenAiRequest(model: String): OpenAiChatCompletionsRequest {
+private fun ChatRequest.toOpenAiRequest(model: String, stream: Boolean = false): OpenAiChatCompletionsRequest {
     val quoteContext = context.quotes.joinToString(separator = "\n") { quote ->
         "${quote.name}(${quote.symbol}, ${quote.exchange})：最新价 ${quote.price}，涨跌 ${quote.change}，涨跌幅 ${quote.changePercent}%"
     }.ifBlank { "当前没有可用行情数据。" }
@@ -149,6 +208,7 @@ private fun ChatRequest.toOpenAiRequest(model: String): OpenAiChatCompletionsReq
             OpenAiMessage("system", SYSTEM_INSTRUCTIONS.trimIndent()),
             OpenAiMessage("user", "用户问题：$question\n\n腾讯实时行情上下文：\n$quoteContext"),
         ),
+        stream = stream,
     )
 }
 
@@ -209,6 +269,8 @@ private const val SYSTEM_INSTRUCTIONS = """
 你是谨慎、客观的股票研究助手。只能基于用户问题和提供的实时行情上下文作答；
 明确区分事实、推断和未知信息，不编造新闻或基本面数据。使用简洁中文 Markdown，
 包含行情观察、可能信号、风险提示，并声明内容不构成投资建议。
+提到某只股票的趋势分析后，另起一行输出 {{trend:股票代码}}，应用会在该位置嵌入行情趋势卡；
+同一股票只输出一次该标记，不要用代码块包裹。
 """
 private const val INSIGHT_INSTRUCTIONS = """
 你是谨慎、客观的股票研究助手。仅根据提供的腾讯实时行情事实生成洞察，不得编造新闻、基本面或预测。

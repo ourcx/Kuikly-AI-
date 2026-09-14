@@ -8,6 +8,100 @@ import com.ourcx.kuiklystock.domain.QuoteDataSource
 
 class TencentStockRepositoryTest {
     @Test
+    fun normalizesSupportedUserStockFormats() {
+        assertEquals("sh600519", parseUserStockDefinition("600519")?.apiCode)
+        assertEquals("sz000001", parseUserStockDefinition("000001")?.apiCode)
+        assertEquals("hk00700", parseUserStockDefinition("00700")?.apiCode)
+        assertEquals("usAAPL", parseUserStockDefinition("aapl")?.apiCode)
+        assertEquals("sz300750", parseUserStockDefinition("sz300750")?.apiCode)
+        assertEquals(null, parseUserStockDefinition("123"))
+        assertEquals(null, parseUserStockDefinition("unknown-symbol"))
+    }
+
+    @Test
+    fun validatesAddsAndPersistsCustomStockWithoutDuplicates() {
+        val persisted = mutableListOf<List<String>>()
+        val repository = TencentStockRepository(
+            requestInvoker = { codes, callback ->
+                val definition = requireNotNull(parseUserStockDefinition(codes.single()))
+                callback(
+                    Result.success(
+                        quoteLine(definition.apiCode, "Custom Stock", definition.symbol, 25.0, 24.0, 24.5, 100.0, 1.0, 4.17, 26.0, 23.0),
+                    ),
+                )
+            },
+            onCustomCodesChanged = persisted::add,
+        )
+        var first: Result<com.ourcx.kuiklystock.domain.StockQuote>? = null
+        var second: Result<com.ourcx.kuiklystock.domain.StockQuote>? = null
+
+        repository.addQuote("002594") { first = it }
+        repository.addQuote("sz002594") { second = it }
+
+        assertEquals("002594", requireNotNull(first).getOrThrow().symbol)
+        assertTrue(requireNotNull(second).isSuccess)
+        assertEquals("002594", repository.directory.first().symbol)
+        assertEquals(1, repository.directory.count { it.symbol == "002594" })
+        assertEquals(listOf(listOf("sz002594")), persisted)
+        assertEquals(25.0, repository.getQuote("002594").price)
+    }
+
+    @Test
+    fun restoresPersistedCustomCodesBeforeBuiltInDirectory() {
+        val repository = TencentStockRepository(
+            requestInvoker = { _, _ -> error("No request expected") },
+            initialCustomCodes = listOf("usMETA", "usMETA", "bad-symbol"),
+        )
+
+        assertEquals("META", repository.directory.first().symbol)
+        assertEquals(STOCKS.size + 1, repository.directory.size)
+    }
+
+    @Test
+    fun stockDirectoryCoversMultiplePagesAndMarkets() {
+        assertTrue(STOCKS.size >= 12)
+        assertTrue(STOCKS.count { it.exchange == "SSE" || it.exchange == "SZSE" } >= 4)
+        assertTrue(STOCKS.count { it.exchange == "HKEX" } >= 4)
+        assertTrue(STOCKS.count { it.exchange == "NASDAQ" || it.exchange == "NYSE" } >= 4)
+    }
+
+    @Test
+    fun requestsAndCachesOnlyTheSelectedPage() {
+        val requestedCodes = mutableListOf<List<String>>()
+        val expectedDefinitions = STOCKS.drop(2).take(2)
+        val repository = TencentStockRepository { codes, callback ->
+            requestedCodes += codes
+            callback(
+                Result.success(
+                    expectedDefinitions.joinToString("\n") { definition ->
+                        quoteLine(
+                            definition.apiCode,
+                            definition.fallbackName,
+                            definition.symbol,
+                            12.0,
+                            10.0,
+                            11.0,
+                            100.0,
+                            2.0,
+                            20.0,
+                            13.0,
+                            9.0,
+                        )
+                    },
+                ),
+            )
+        }
+        var result: Result<List<com.ourcx.kuiklystock.domain.StockQuote>>? = null
+
+        repository.getQuotesPage(offset = 2, limit = 2) { result = it }
+
+        assertEquals(listOf(expectedDefinitions.map(StockDefinition::apiCode)), requestedCodes)
+        assertEquals(expectedDefinitions.map(StockDefinition::symbol), requireNotNull(result).getOrThrow().map { it.symbol })
+        assertEquals(12.0, repository.getQuote(expectedDefinitions.last().symbol).price)
+        assertEquals(STOCKS.size, repository.directory.size)
+    }
+
+    @Test
     fun parsesMultiMarketQuoteFieldsInDefinitionOrder() {
         val payload = listOf(
             quoteLine("usAAPL", "苹果", "AAPL.OQ", 326.57, 315.34, 316.67, 70011913.0, 11.23, 3.56, 326.74, 316.51),

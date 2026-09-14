@@ -319,9 +319,6 @@ private fun ViewContainer<*, *>.chatConversation(
                 chatMessage(message, marketState, onRetry, onSelectStock)
             }
         }
-        if (state.isSending) {
-            chatGeneratingBubble()
-        }
     }
 }
 
@@ -429,7 +426,7 @@ private fun ViewContainer<*, *>.chatMessage(
         }
         when (message.status) {
             ChatMessageStatus.COMPLETE -> Unit
-            ChatMessageStatus.GENERATING -> chatStatusLabel("正在整理…", failed = false)
+            ChatMessageStatus.GENERATING -> chatStatusLabel("正在生成…", failed = false)
             ChatMessageStatus.FAILED -> chatRetryAction(onRetry)
         }
     }
@@ -458,6 +455,10 @@ private fun ViewContainer<*, *>.chatContentBlock(
             val quote = marketState.findQuote(block.symbol)
             if (quote == null) missingQuote(block.symbol) else sparkline(quote)
         }
+        is ChatContentBlock.EmbeddedTrend -> {
+            val quote = marketState.findQuote(block.symbol)
+            if (quote == null) missingQuote(block.symbol) else embeddedTrendCard(quote, onSelectStock)
+        }
         is ChatContentBlock.Error -> Text {
             attr {
                 text(block.message)
@@ -466,21 +467,6 @@ private fun ViewContainer<*, *>.chatContentBlock(
                 marginBottom(DesignTokens.Spacing.XS)
             }
         }
-    }
-}
-
-private fun ViewContainer<*, *>.chatGeneratingBubble() {
-    View {
-        attr {
-            margin(
-                left = DesignTokens.Spacing.MD,
-                right = DesignTokens.Spacing.XL + DesignTokens.Spacing.MD,
-            )
-            padding(DesignTokens.Spacing.MD)
-            borderRadius(DesignTokens.Radius.LG)
-            backgroundColor(DesignTokens.Colors.surfaceElevated)
-        }
-        chatStatusLabel("正在整理行情数据", failed = false)
     }
 }
 
@@ -518,12 +504,10 @@ private fun ViewContainer<*, *>.missingQuote(symbol: String) {
     }
 }
 
-private fun MarketState.findQuote(symbol: String): StockQuote? = when (val state = quotes) {
-    is LoadState.Content -> state.value.firstOrNull { quote ->
+private fun MarketState.findQuote(symbol: String): StockQuote? =
+    quoteCatalog.firstOrNull { quote ->
         quote.symbol.equals(symbol.trim(), ignoreCase = true)
     }
-    else -> null
-}
 
 private val stockMarkdownConfig = MarkdownConfig(
     colors = MarkdownColors(

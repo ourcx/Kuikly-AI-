@@ -26,7 +26,12 @@ fun ViewContainer<*, *>.stockDetailContentSlot(
             null -> detailStatus("未找到详情", "当前股票详情不可用，请返回行情列表重新选择。")
             LoadState.Loading -> detailStatus("正在加载详情", "正在获取股票行情与风险信息…")
             LoadState.Empty -> detailStatus("暂无详情", "当前股票没有可展示的详情数据。")
-            is LoadState.Error -> detailStatus("详情加载失败", content.message)
+            is LoadState.Error -> detailStatus(
+                title = "详情加载失败",
+                description = content.message,
+                action = "重新加载",
+                onAction = onRetryInsight,
+            )
             is LoadState.Content -> detailContent(content.value, onRetryInsight)
         }
     }
@@ -85,7 +90,12 @@ private fun ViewContainer<*, *>.disclaimer() {
         }
     }
 }
-private fun ViewContainer<*, *>.detailStatus(title: String, description: String) {
+private fun ViewContainer<*, *>.detailStatus(
+    title: String,
+    description: String,
+    action: String? = null,
+    onAction: (() -> Unit)? = null,
+) {
     View {
         attr {
             flex(DesignTokens.Size.FILL)
@@ -106,6 +116,30 @@ private fun ViewContainer<*, *>.detailStatus(title: String, description: String)
                 fontSize(DesignTokens.Typography.BODY)
                 color(DesignTokens.Colors.onSurfaceMuted)
                 marginTop(DesignTokens.Spacing.XS)
+            }
+        }
+        if (action != null && onAction != null) {
+            View {
+                attr {
+                    padding(
+                        top = DesignTokens.Spacing.XS,
+                        bottom = DesignTokens.Spacing.XS,
+                        left = DesignTokens.Spacing.MD,
+                        right = DesignTokens.Spacing.MD,
+                    )
+                    borderRadius(DesignTokens.Radius.FULL)
+                    backgroundColor(DesignTokens.Colors.accentPrimary)
+                    marginTop(DesignTokens.Spacing.MD)
+                }
+                event { click { onAction() } }
+                Text {
+                    attr {
+                        text(action)
+                        fontSize(DesignTokens.Typography.BODY)
+                        fontWeightBold()
+                        color(DesignTokens.Colors.onPrimary)
+                    }
+                }
             }
         }
         Text {

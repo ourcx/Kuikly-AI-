@@ -4,13 +4,14 @@ KuiklyStock 是使用 Kuikly UI DSL 和 Kotlin Multiplatform 构建的 Android �
 
 ## 功能
 
+- 内置 18 只 A 股、港股、美股行情，并支持输入代码从腾讯行情校验、加入和持久化自定义股票；每页最多加载 10 只。
 - 行情搜索、市场筛选、涨跌/振幅排序、自选和最近浏览。
 - 腾讯实时行情与离线 Fixture 自动降级，并在界面明确标注数据来源。
 - 统一股票详情页：基础行情、Kuikly Canvas 趋势图、振幅/区间位置、AI 趋势与风险解读。
-- AI 研究会话：完整消息记录、建议问题、发送态、失败态、原位重试和清空会话。
-- KuiklyMarkdown 渲染 Markdown，并组合股票卡片和走势图；卡片可进入统一详情页并返回原会话。
+- AI 研究会话：SSE 流式生成、完整消息记录、建议问题、失败态、原位重试和清空会话。
+- KuiklyMarkdown 渲染 Markdown，并在分析段落内嵌可点击的行情趋势卡；卡片可进入统一详情页并返回原会话。
 - 可在应用内配置 OpenAI 兼容服务的 Base URL、API Token 和 Model。
-- 行情页“失败态”入口可演示错误与重新加载；无匹配搜索可演示空态。
+- 行情页根据实际来源显示“腾讯实时行情”或“离线演示数据”；无匹配搜索可演示空态。
 
 ## 环境要求
 
@@ -55,7 +56,8 @@ adb -s emulator-5554 shell am start -W \
   "messages": [
     {"role": "system", "content": "分析边界与格式要求"},
     {"role": "user", "content": "用户问题与行情上下文"}
-  ]
+  ],
+  "stream": true
 }
 ```
 
@@ -120,5 +122,5 @@ InMemoryChatRepository ─┘
 - OpenAI Chat Completions 兼容配置运行时生效，错误正文和鉴权字段会脱敏。
 - 当前只验证 Android；iOS / OpenHarmony 目录不代表对应平台已经完成。
 - 腾讯快照没有完整分时序列，图表展示价格区间轨迹，不冒充专业 K 线。
-- 自选、最近浏览和会话只在当前进程内保存；在线 AI 暂未实现流式输出。
+- 最近浏览和会话只在当前进程内保存；自定义股票代码会持久化到 Android 应用私有配置。
 - Demo 不包含真实交易、下单或收益承诺。

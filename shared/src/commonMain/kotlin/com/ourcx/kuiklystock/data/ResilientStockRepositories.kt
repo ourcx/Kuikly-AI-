@@ -9,7 +9,9 @@ class ResilientStockRepository(
     private val remoteRepository: StockRepository,
     private val fixtureRepository: StockRepository,
 ) : StockRepository {
-    private var activeRepository: StockRepository = fixtureRepository
+    private var activeRepository: StockRepository = remoteRepository
+    override val directory: List<StockDirectoryEntry>
+        get() = activeRepository.directory
 
     override fun getQuotes(callback: (Result<List<StockQuote>>) -> Unit) {
         val completed = atomic(false)
@@ -39,6 +41,35 @@ class ResilientStockRepository(
         runCatching { activeRepository.getQuote(symbol) }
             .recoverCatching { fixtureRepository.getQuote(symbol) }
             .getOrThrow()
+
+    override fun addQuote(symbol: String, callback: (Result<StockQuote>) -> Unit) {
+        remoteRepository.addQuote(symbol) { result ->
+            result.onSuccess { activeRepository = remoteRepository }
+            callback(result)
+        }
+    }
+
+    override fun getQuotesPage(offset: Int, limit: Int, callback: (Result<List<StockQuote>>) -> Unit) {
+        if (offset == 0) {
+            remoteRepository.getQuotesPage(offset, limit) { result ->
+                result.fold(
+                    onSuccess = { quotes ->
+                        activeRepository = remoteRepository
+                        callback(Result.success(quotes))
+                    },
+                    onFailure = {
+                        activeRepository = fixtureRepository
+                        // Fixture 没有远端目录，首屏回退时一次返回完整集合，避免目录总数与分页状态不一致。
+                        fixtureRepository.getQuotes(callback)
+                    },
+                )
+            }
+            return
+        }
+
+        // 首屏已展示实时数据后，下一页失败不能悄悄拼入另一套 Fixture 价格。
+        activeRepository.getQuotesPage(offset, limit, callback)
+    }
 }
 
 /** Remote AI insight when configured, with local analysis as a stable fallback. */

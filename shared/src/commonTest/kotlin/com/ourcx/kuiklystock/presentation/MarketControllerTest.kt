@@ -3,6 +3,7 @@ package com.ourcx.kuiklystock.presentation
 import com.ourcx.kuiklystock.data.InMemoryStockRepository
 import com.ourcx.kuiklystock.data.InsightRepository
 import com.ourcx.kuiklystock.data.StockRepository
+import com.ourcx.kuiklystock.data.StockDirectoryEntry
 import com.ourcx.kuiklystock.domain.LoadState
 import com.ourcx.kuiklystock.domain.MarketFilter
 import com.ourcx.kuiklystock.domain.MarketSort
@@ -26,6 +27,7 @@ class MarketControllerTest {
         assertEquals(listOf("AAPL", "TSLA"), controller.contentSymbols())
         controller.selectSort(MarketSort.LOSERS)
         assertEquals(listOf("TSLA", "AAPL"), controller.contentSymbols())
+        assertEquals(listOf("00700", "09988", "600519", "AAPL", "TSLA"), controller.state.quoteCatalog.map { it.symbol })
 
         controller.clearDiscoveryFilters()
         assertEquals(listOf("00700", "09988", "600519", "AAPL", "TSLA"), controller.contentSymbols())
@@ -158,6 +160,81 @@ class MarketControllerTest {
     }
 
     @Test
+    fun pagedLoadUsesNormalPageSizeAndAppendsWithoutDuplicates() {
+        val repository = DeferredPagedStockRepository()
+        val controller = MarketController(repository)
+
+        controller.load()
+        assertEquals(listOf(0 to 10), repository.requests)
+        repository.complete(0, Result.success(listOf(QUOTE, QUOTE.copy(symbol = "PAGE2"))))
+
+        assertEquals(2, controller.state.loadedCount)
+        assertEquals(5, controller.state.catalogCount)
+        assertTrue(controller.state.hasMore)
+
+        controller.loadMore()
+        controller.loadMore()
+        assertEquals(listOf(0 to 10, 2 to 10), repository.requests)
+        assertTrue(controller.state.isLoadingMore)
+        repository.complete(1, Result.success(listOf(QUOTE.copy(symbol = "PAGE3"), QUOTE.copy(symbol = "PAGE4"))))
+
+        assertEquals(listOf("DEMO", "PAGE2", "PAGE3", "PAGE4"), controller.contentSymbols())
+        assertEquals(4, controller.state.loadedCount)
+        assertTrue(controller.state.hasMore)
+    }
+
+    @Test
+    fun loadMoreFailureKeepsExistingQuotesAndCanRetry() {
+        val repository = DeferredPagedStockRepository()
+        val controller = MarketController(repository)
+        controller.load()
+        repository.complete(0, Result.success(listOf(QUOTE, QUOTE.copy(symbol = "PAGE2"))))
+
+        controller.loadMore()
+        repository.complete(1, Result.failure(IllegalStateException("page unavailable")))
+
+        assertEquals(listOf("DEMO", "PAGE2"), controller.contentSymbols())
+        assertEquals("page unavailable", controller.state.loadMoreError)
+        assertTrue(controller.state.hasMore)
+
+        controller.loadMore()
+        assertEquals(listOf(0 to 10, 2 to 10, 2 to 10), repository.requests)
+    }
+
+    @Test
+    fun addStockValidatesThenRefreshesFirstPage() {
+        val repository = DeferredPagedStockRepository()
+        val controller = MarketController(repository)
+        controller.load()
+        repository.complete(0, Result.success(listOf(QUOTE)))
+
+        controller.updateAddSymbolDraft("AAPL")
+        controller.addStock()
+
+        assertEquals(listOf("AAPL"), repository.addRequests)
+        assertTrue(controller.state.isAddingStock)
+        repository.completeAdd(Result.success(QUOTE.copy(symbol = "AAPL")))
+
+        assertEquals("", controller.state.addSymbolDraft)
+        assertTrue(!controller.state.isAddingStock)
+        assertEquals(listOf(0 to 10, 0 to 10), repository.requests)
+    }
+
+    @Test
+    fun addStockFailureKeepsDraftAndShowsReadableError() {
+        val repository = DeferredPagedStockRepository()
+        val controller = MarketController(repository)
+        controller.updateAddSymbolDraft("INVALID")
+
+        controller.addStock()
+        repository.completeAdd(Result.failure(IllegalArgumentException("unsupported symbol")))
+
+        assertEquals("INVALID", controller.state.addSymbolDraft)
+        assertEquals("unsupported symbol", controller.state.addStockError)
+        assertTrue(!controller.state.isAddingStock)
+    }
+
+    @Test
     fun demoStatesAndRetryFollowTheSameStateContract() {
         val controller = MarketController(FakeStockRepository())
 
@@ -277,6 +354,40 @@ private class DeferredStockRepository : StockRepository, InsightRepository {
 
     fun complete(index: Int, result: Result<List<StockQuote>>) {
         callbacks[index](result)
+    }
+}
+
+private class DeferredPagedStockRepository : StockRepository {
+    override val directory = (1..5).map { index ->
+        StockDirectoryEntry(symbol = "PAGE$index", name = "Stock $index", exchange = "TEST")
+    }
+    val requests = mutableListOf<Pair<Int, Int>>()
+    val addRequests = mutableListOf<String>()
+    private val callbacks = mutableListOf<(Result<List<StockQuote>>) -> Unit>()
+    private var addCallback: ((Result<StockQuote>) -> Unit)? = null
+
+    override fun getQuotes(callback: (Result<List<StockQuote>>) -> Unit) {
+        error("Paged repository must use getQuotesPage")
+    }
+
+    override fun getQuotesPage(offset: Int, limit: Int, callback: (Result<List<StockQuote>>) -> Unit) {
+        requests += offset to limit
+        callbacks += callback
+    }
+
+    override fun getQuote(symbol: String): StockQuote = QUOTE.copy(symbol = symbol)
+
+    override fun addQuote(symbol: String, callback: (Result<StockQuote>) -> Unit) {
+        addRequests += symbol
+        addCallback = callback
+    }
+
+    fun complete(index: Int, result: Result<List<StockQuote>>) {
+        callbacks[index](result)
+    }
+
+    fun completeAdd(result: Result<StockQuote>) {
+        requireNotNull(addCallback).invoke(result)
     }
 }
 

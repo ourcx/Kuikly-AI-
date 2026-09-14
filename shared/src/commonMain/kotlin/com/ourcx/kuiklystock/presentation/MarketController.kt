@@ -30,12 +30,30 @@ class MarketController(
     private var originalQuotesSnapshot: List<StockQuote> = emptyList()
     private var sourceStatus: MarketSourceStatus = MarketSourceStatus.LOADING
     private var loadGeneration: Long = 0
+    private val paginationEnabled: Boolean
+        get() = stockRepository.directory.isNotEmpty()
 
     /** Intent: Load quotes into a stable source snapshot and publish the derived market state under current discovery controls. */
     fun load() {
         val requestGeneration = ++loadGeneration
         sourceStatus = MarketSourceStatus.LOADING
-        updateState(state.copy(quotes = LoadState.Loading, totalCount = 0))
+        updateState(
+            state.copy(
+                quotes = LoadState.Loading,
+                // 刷新期间继续给 AI 提供上一份完整快照，新首屏成功后再整体替换。
+                quoteCatalog = originalQuotesSnapshot,
+                catalogCount = stockRepository.directory.size,
+                loadedCount = originalQuotesSnapshot.size,
+                hasMore = false,
+                isLoadingMore = false,
+                loadMoreError = null,
+                totalCount = 0,
+            ),
+        )
+        if (paginationEnabled) {
+            requestPage(offset = 0, requestGeneration = requestGeneration, initial = true)
+            return
+        }
         runCatching {
             stockRepository.getQuotes { result ->
                 if (requestGeneration != loadGeneration) return@getQuotes
@@ -98,6 +116,41 @@ class MarketController(
     }
 
     fun retry() = load()
+
+    fun loadMore() {
+        if (!paginationEnabled || !state.hasMore || state.isLoadingMore) return
+        updateState(state.copy(isLoadingMore = true, loadMoreError = null))
+        requestPage(offset = originalQuotesSnapshot.size, requestGeneration = loadGeneration, initial = false)
+    }
+
+    fun updateAddSymbolDraft(symbol: String) {
+        updateState(state.copy(addSymbolDraft = symbol, addStockError = null))
+    }
+
+    fun addStock() {
+        if (state.isAddingStock) return
+        val symbol = state.addSymbolDraft.trim()
+        if (symbol.isEmpty()) {
+            updateState(state.copy(addStockError = "请输入股票代码"))
+            return
+        }
+        updateState(state.copy(isAddingStock = true, addStockError = null))
+        runCatching {
+            stockRepository.addQuote(symbol) { result ->
+                result.fold(
+                    onSuccess = {
+                        updateState(state.copy(addSymbolDraft = "", isAddingStock = false, addStockError = null))
+                        load()
+                    },
+                    onFailure = { error ->
+                        updateState(state.copy(isAddingStock = false, addStockError = error.readableMessage()))
+                    },
+                )
+            }
+        }.onFailure { error ->
+            updateState(state.copy(isAddingStock = false, addStockError = error.readableMessage()))
+        }
+    }
 
     /** Returns the latest complete source snapshot without discovery filters or transient loading state. */
     fun completeQuotesSnapshot(): List<StockQuote> = originalQuotesSnapshot
@@ -232,9 +285,56 @@ class MarketController(
         updateState(
             state.copy(
                 quotes = derivedLoadState,
+                quoteCatalog = originalQuotesSnapshot,
+                catalogCount = if (paginationEnabled) stockRepository.directory.size else originalQuotesSnapshot.size,
+                loadedCount = originalQuotesSnapshot.size,
+                hasMore = paginationEnabled && originalQuotesSnapshot.size < stockRepository.directory.size,
+                isLoadingMore = false,
                 totalCount = derivedQuotes.size,
             ),
         )
+    }
+
+    private fun requestPage(offset: Int, requestGeneration: Long, initial: Boolean) {
+        runCatching {
+            stockRepository.getQuotesPage(offset, PAGE_SIZE) { result ->
+                if (requestGeneration != loadGeneration) return@getQuotesPage
+                result.fold(
+                    onSuccess = { quotes ->
+                        originalQuotesSnapshot = if (initial) {
+                            quotes
+                        } else {
+                            (originalQuotesSnapshot + quotes).distinctBy { quote -> normalizeSymbol(quote.symbol) }
+                        }
+                        sourceStatus = if (originalQuotesSnapshot.isEmpty()) MarketSourceStatus.EMPTY else MarketSourceStatus.CONTENT
+                        updateState(state.copy(loadMoreError = null))
+                        publishMarket()
+                    },
+                    onFailure = { error ->
+                        if (initial) {
+                            sourceStatus = MarketSourceStatus.ERROR
+                            updateState(
+                                state.copy(
+                                    quotes = LoadState.Error(error.readableMessage()),
+                                    isLoadingMore = false,
+                                    totalCount = 0,
+                                ),
+                            )
+                        } else {
+                            updateState(state.copy(isLoadingMore = false, loadMoreError = error.readableMessage()))
+                        }
+                    },
+                )
+            }
+        }.onFailure { error ->
+            if (requestGeneration != loadGeneration) return@onFailure
+            if (initial) {
+                sourceStatus = MarketSourceStatus.ERROR
+                updateState(state.copy(quotes = LoadState.Error(error.readableMessage()), totalCount = 0))
+            } else {
+                updateState(state.copy(isLoadingMore = false, loadMoreError = error.readableMessage()))
+            }
+        }
     }
 
     private fun updateState(newState: MarketState) {
@@ -262,6 +362,7 @@ private const val EMPTY_SYMBOL_MESSAGE = "股票代码不能为空"
 private const val DEFAULT_ERROR_MESSAGE = "服务暂时不可用，请重试"
 private const val INSIGHT_UNAVAILABLE_MESSAGE = "AI 洞察服务暂不可用"
 private const val MAX_RECENT_QUOTES = 3
+private const val PAGE_SIZE = 10
 
 private enum class MarketSourceStatus {
     CONTENT,

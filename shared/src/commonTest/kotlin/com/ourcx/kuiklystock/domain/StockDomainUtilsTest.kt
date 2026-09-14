@@ -69,15 +69,35 @@ class StockDomainUtilsTest {
             ParsedStockAiContent("分析正文", listOf("00700", "AAPL"), showTrend = true),
         )
 
-        assertEquals(5, blocks.size)
+        assertEquals(3, blocks.size)
         assertEquals("分析正文", assertIs<ChatContentBlock.Markdown>(blocks[0]).text)
-        assertEquals("00700", assertIs<ChatContentBlock.StockCard>(blocks[1]).symbol)
-        assertEquals("00700", assertIs<ChatContentBlock.Trend>(blocks[2]).symbol)
-        assertEquals("AAPL", assertIs<ChatContentBlock.StockCard>(blocks[3]).symbol)
-        assertEquals("AAPL", assertIs<ChatContentBlock.Trend>(blocks[4]).symbol)
+        assertEquals("00700", assertIs<ChatContentBlock.EmbeddedTrend>(blocks[1]).symbol)
+        assertEquals("AAPL", assertIs<ChatContentBlock.EmbeddedTrend>(blocks[2]).symbol)
 
         val withoutTrend = buildChatContentBlocks(ParsedStockAiContent("正文", listOf("TSLA")))
         assertEquals(2, withoutTrend.size)
         assertFalse(withoutTrend.any { it is ChatContentBlock.Trend })
+    }
+
+    @Test
+    fun embedsTrendAtTheRequestedMarkdownPosition() {
+        val blocks = buildChatContentBlocks(
+            ParsedStockAiContent(
+                markdown = "## Price action\nMomentum is strengthening.\n{{trend:AAPL}}\n## Risk\nWatch volatility.",
+                symbols = listOf("AAPL"),
+                showTrend = true,
+            ),
+        )
+
+        assertEquals(3, blocks.size)
+        assertEquals(
+            "## Price action\nMomentum is strengthening.",
+            assertIs<ChatContentBlock.Markdown>(blocks[0]).text,
+        )
+        assertEquals("AAPL", assertIs<ChatContentBlock.EmbeddedTrend>(blocks[1]).symbol)
+        assertEquals(
+            "## Risk\nWatch volatility.",
+            assertIs<ChatContentBlock.Markdown>(blocks[2]).text,
+        )
     }
 }

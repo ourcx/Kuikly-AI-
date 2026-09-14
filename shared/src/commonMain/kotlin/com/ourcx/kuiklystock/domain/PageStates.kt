@@ -30,6 +30,16 @@ sealed interface AppDestination {
 
 data class MarketState(
     val quotes: LoadState<List<StockQuote>> = LoadState.Loading,
+    // AI 回答中的股票卡片不能依赖当前筛选结果，否则切换市场或刷新时已生成的卡片会失效。
+    val quoteCatalog: List<StockQuote> = emptyList(),
+    val catalogCount: Int = 0,
+    val loadedCount: Int = 0,
+    val hasMore: Boolean = false,
+    val isLoadingMore: Boolean = false,
+    val loadMoreError: String? = null,
+    val addSymbolDraft: String = "",
+    val isAddingStock: Boolean = false,
+    val addStockError: String? = null,
     val query: String = "",
     val filter: MarketFilter = MarketFilter.ALL,
     val sort: MarketSort = MarketSort.DEFAULT,

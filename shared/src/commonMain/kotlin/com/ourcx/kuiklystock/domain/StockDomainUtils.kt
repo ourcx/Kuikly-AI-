@@ -79,13 +79,29 @@ fun parseStockAiMetadata(markdown: String): ParsedStockAiContent {
 }
 
 fun buildChatContentBlocks(parsedContent: ParsedStockAiContent): List<ChatContentBlock> = buildList {
-    add(ChatContentBlock.Markdown(parsedContent.markdown))
-    parsedContent.symbols.forEach { symbol ->
-        add(ChatContentBlock.StockCard(symbol))
-        if (parsedContent.showTrend) {
-            add(ChatContentBlock.Trend(symbol))
-        }
+    val embeddedSymbols = mutableSetOf<String>()
+    var markdownCursor = 0
+    trendMarkerPattern.findAll(parsedContent.markdown).forEach { match ->
+        addMarkdownBlock(parsedContent.markdown.substring(markdownCursor, match.range.first))
+        val symbol = match.groupValues[1].trim().uppercase()
+        if (embeddedSymbols.add(symbol)) add(ChatContentBlock.EmbeddedTrend(symbol))
+        markdownCursor = match.range.last + 1
     }
+    addMarkdownBlock(parsedContent.markdown.substring(markdownCursor))
+
+    parsedContent.symbols.forEach { rawSymbol ->
+        val symbol = rawSymbol.trim().uppercase()
+        if (symbol.isEmpty() || !embeddedSymbols.add(symbol)) return@forEach
+        add(
+            if (parsedContent.showTrend) ChatContentBlock.EmbeddedTrend(symbol)
+            else ChatContentBlock.StockCard(symbol),
+        )
+    }
+}
+
+private fun MutableList<ChatContentBlock>.addMarkdownBlock(markdown: String) {
+    val content = markdown.trim()
+    if (content.isNotEmpty()) add(ChatContentBlock.Markdown(content))
 }
 
 @Serializable
@@ -99,6 +115,7 @@ private val stockAiJson = Json {
 }
 
 private val stockAiMetadataPattern = Regex("""<!--stock-ai:(\{[\s\S]*\})-->\s*$""")
+private val trendMarkerPattern = Regex("""\{\{trend:([A-Za-z0-9.]{1,16})\}\}""", RegexOption.IGNORE_CASE)
 
 private const val DECIMAL_PLACES = 2
 private const val DECIMAL_FACTOR = 100.0

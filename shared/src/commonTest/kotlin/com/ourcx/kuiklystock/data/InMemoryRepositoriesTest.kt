@@ -30,6 +30,27 @@ class InMemoryRepositoriesTest {
     }
 
     @Test
+    fun portfolioQuestionBuildsMultipleCardsAndTrendsFromCurrentContext() {
+        val repository = InMemoryChatRepository()
+        var result: Result<ChatResponse>? = null
+        val quotes = listOf(
+            ChatQuoteContext("CALM", "平稳股", "TEST", 10.0, 0.1, 1.0),
+            ChatQuoteContext("HOT", "异动股", "TEST", 20.0, 1.0, 5.0),
+            ChatQuoteContext("DOWN", "回落股", "TEST", 30.0, -0.9, -3.0),
+            ChatQuoteContext("MID", "中位股", "TEST", 40.0, 0.8, 2.0),
+        )
+
+        repository.ask(
+            ChatRequest(question = "请梳理自选股风险", context = ChatContext(quotes)),
+        ) { result = it }
+
+        val response = requireNotNull(result).getOrThrow()
+        assertEquals(listOf("HOT", "DOWN", "MID"), response.symbols)
+        assertTrue(response.showTrend)
+        response.symbols.forEach { symbol -> assertTrue(response.answer.contains(symbol)) }
+    }
+
+    @Test
     fun buildsConservativeFallbackInsightForUnknownRemoteQuote() {
         val repository = InMemoryStockRepository()
         val quote = repository.getQuote("AAPL").copy(symbol = "NEW")

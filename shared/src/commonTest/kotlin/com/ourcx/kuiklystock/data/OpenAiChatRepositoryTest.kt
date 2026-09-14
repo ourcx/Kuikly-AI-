@@ -73,6 +73,39 @@ class OpenAiChatRepositoryTest {
         assertFalse(invoked)
         assertTrue(requireNotNull(result).isFailure)
     }
+
+    @Test
+    fun streamsChatDeltasAndBuildsOneTerminalResponse() {
+        var payload = ""
+        val deltas = mutableListOf<String>()
+        val repository = OpenAiChatRepository(
+            configurationProvider = { true },
+            modelProvider = { "gpt-test" },
+            streamingRequestInvoker = { body, onDelta, callback ->
+                payload = body
+                onDelta("## Apple\n")
+                onDelta("{{trend:AAPL}}")
+                callback(Result.success("chat-stream-1"))
+            },
+            requestInvoker = { _, _ -> error("Non-streaming transport should not be used") },
+        )
+        var result: Result<ChatResponse>? = null
+
+        repository.askStreaming(
+            ChatRequest(
+                question = "Analyze AAPL",
+                context = ChatContext(listOf(ChatQuoteContext("AAPL", "Apple", "NASDAQ", 10.0, 1.0, 10.0))),
+            ),
+            deltas::add,
+        ) { result = it }
+
+        assertTrue(payload.contains("\"stream\":true"))
+        assertEquals(listOf("## Apple\n", "{{trend:AAPL}}"), deltas)
+        val response = requireNotNull(result).getOrThrow()
+        assertEquals("## Apple\n{{trend:AAPL}}", response.answer)
+        assertEquals("chat-stream-1", response.conversationId)
+        assertEquals(listOf("AAPL"), response.symbols)
+    }
 }
 
 private val QUOTE = StockQuote(

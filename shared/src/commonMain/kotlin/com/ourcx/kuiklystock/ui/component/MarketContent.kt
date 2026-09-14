@@ -4,11 +4,11 @@ import com.ourcx.kuiklystock.domain.LoadState
 import com.ourcx.kuiklystock.domain.MarketFilter
 import com.ourcx.kuiklystock.domain.MarketSort
 import com.ourcx.kuiklystock.domain.MarketState
+import com.ourcx.kuiklystock.domain.QuoteDataSource
 import com.ourcx.kuiklystock.domain.StockQuote
 import com.ourcx.kuiklystock.domain.formatStockChange
 import com.ourcx.kuiklystock.domain.formatStockChangePercent
 import com.ourcx.kuiklystock.domain.formatStockPrice
-import com.ourcx.kuiklystock.presentation.MarketDemoState
 import com.ourcx.kuiklystock.theme.DesignTokens
 import com.tencent.kuikly.core.base.Color
 import com.tencent.kuikly.core.base.ViewContainer
@@ -23,7 +23,9 @@ import com.tencent.kuikly.core.views.View
 fun ViewContainer<*, *>.marketContentSlot(
     state: MarketState,
     onRetry: () -> Unit,
-    onSelectDemo: (MarketDemoState) -> Unit,
+    onLoadMore: () -> Unit,
+    onUpdateAddStockDraft: (String) -> Unit,
+    onAddStock: () -> Unit,
     onSelectStock: (String) -> Unit,
     onUpdateQuery: (String) -> Unit,
     onSelectFilter: (MarketFilter) -> Unit,
@@ -39,16 +41,15 @@ fun ViewContainer<*, *>.marketContentSlot(
             borderRadius(DesignTokens.Radius.LG)
             backgroundColor(DesignTokens.Colors.surfaceAlt)
         }
-        marketHeader(
-            onRefresh = onRetry,
-            onShowFailure = { onSelectDemo(MarketDemoState.ERROR) },
-        )
+        marketHeader(state = state, onRefresh = onRetry)
         marketDiscoveryToolbar(
             state = state,
             onUpdateQuery = onUpdateQuery,
             onSelectFilter = onSelectFilter,
             onSelectSort = onSelectSort,
             onToggleFavoritesOnly = onToggleFavoritesOnly,
+            onUpdateAddStockDraft = onUpdateAddStockDraft,
+            onAddStock = onAddStock,
         )
         when (val quotes = state.quotes) {
             LoadState.Loading -> marketStatusPanel(
@@ -58,8 +59,16 @@ fun ViewContainer<*, *>.marketContentSlot(
             LoadState.Empty -> marketStatusPanel(
                 title = "没有找到匹配的行情",
                 description = state.emptyDiscoveryDescription(),
-                action = if (state.hasDiscoveryFiltersApplied()) "清除筛选" else null,
-                onAction = if (state.hasDiscoveryFiltersApplied()) onClearDiscoveryFilters else null,
+                action = when {
+                    state.hasMore -> "继续加载行情"
+                    state.hasDiscoveryFiltersApplied() -> "清除筛选"
+                    else -> null
+                },
+                onAction = when {
+                    state.hasMore -> onLoadMore
+                    state.hasDiscoveryFiltersApplied() -> onClearDiscoveryFilters
+                    else -> null
+                },
             )
             is LoadState.Error -> marketStatusPanel(
                 title = "行情加载失败",
@@ -74,12 +83,18 @@ fun ViewContainer<*, *>.marketContentSlot(
                 onSelectStock = onSelectStock,
                 onToggleFavorite = onToggleFavorite,
                 onAskAi = onAskAi,
+                loadedCount = state.loadedCount,
+                catalogCount = state.catalogCount,
+                hasMore = state.hasMore,
+                isLoadingMore = state.isLoadingMore,
+                loadMoreError = state.loadMoreError,
+                onLoadMore = onLoadMore,
             )
         }
     }
 }
 
-private fun ViewContainer<*, *>.marketHeader(onRefresh: () -> Unit, onShowFailure: () -> Unit) {
+private fun ViewContainer<*, *>.marketHeader(state: MarketState, onRefresh: () -> Unit) {
     View {
         attr {
             padding(DesignTokens.Size.PAGE_GUTTER)
@@ -102,14 +117,13 @@ private fun ViewContainer<*, *>.marketHeader(onRefresh: () -> Unit, onShowFailur
                 }
                 Text {
                     attr {
-                        text("实时优先 · 网络不可用时自动切换离线数据")
+                        text(state.marketSourceDescription())
                         fontSize(DesignTokens.Typography.CAPTION)
                         color(DesignTokens.Colors.onSurfaceMuted)
                         marginTop(DesignTokens.Spacing.XXS)
                     }
                 }
             }
-            headerAction("失败态", DesignTokens.Colors.onSurfaceMuted, onShowFailure)
             View {
                 attr {
                     marginLeft(DesignTokens.Spacing.XS)
@@ -131,31 +145,14 @@ private fun ViewContainer<*, *>.marketHeader(onRefresh: () -> Unit, onShowFailur
     }
 }
 
-private fun ViewContainer<*, *>.headerAction(label: String, color: Color, onClick: () -> Unit) {
-    View {
-        attr {
-            padding(top = DesignTokens.Spacing.XS, bottom = DesignTokens.Spacing.XS, left = DesignTokens.Spacing.SM, right = DesignTokens.Spacing.SM)
-            borderRadius(DesignTokens.Radius.FULL)
-            backgroundColor(DesignTokens.Colors.surfaceElevated)
-        }
-        event { click { onClick() } }
-        Text {
-            attr {
-                text(label)
-                fontSize(DesignTokens.Typography.CAPTION)
-                fontWeightBold()
-                color(color)
-            }
-        }
-    }
-}
-
 private fun ViewContainer<*, *>.marketDiscoveryToolbar(
     state: MarketState,
     onUpdateQuery: (String) -> Unit,
     onSelectFilter: (MarketFilter) -> Unit,
     onSelectSort: (MarketSort) -> Unit,
     onToggleFavoritesOnly: () -> Unit,
+    onUpdateAddStockDraft: (String) -> Unit,
+    onAddStock: () -> Unit,
 ) {
     View {
         attr {
@@ -169,6 +166,11 @@ private fun ViewContainer<*, *>.marketDiscoveryToolbar(
         marketSearchField(
             query = state.query,
             onUpdateQuery = onUpdateQuery,
+        )
+        marketAddStockField(
+            state = state,
+            onUpdateDraft = onUpdateAddStockDraft,
+            onAdd = onAddStock,
         )
         View {
             attr {
@@ -215,6 +217,69 @@ private fun ViewContainer<*, *>.marketDiscoveryToolbar(
                     color(if (state.favoritesOnly) DesignTokens.Colors.accentTertiary else DesignTokens.Colors.onSurfaceMuted)
                 }
                 event { click { onToggleFavoritesOnly() } }
+            }
+        }
+    }
+}
+
+private fun ViewContainer<*, *>.marketAddStockField(
+    state: MarketState,
+    onUpdateDraft: (String) -> Unit,
+    onAdd: () -> Unit,
+) {
+    View {
+        attr {
+            flexDirectionRow()
+            alignItemsCenter()
+            marginTop(DesignTokens.Spacing.SM)
+        }
+        View {
+            attr {
+                flex(DesignTokens.Size.FILL)
+                height(DesignTokens.Size.CHAT_INPUT_HEIGHT)
+                padding(left = DesignTokens.Spacing.SM, right = DesignTokens.Spacing.SM)
+                borderRadius(DesignTokens.Radius.LG)
+                backgroundColor(DesignTokens.Colors.primary)
+            }
+            Input {
+                attr {
+                    flex(DesignTokens.Size.FILL)
+                    backgroundColor(DesignTokens.Colors.primary)
+                    text(state.addSymbolDraft)
+                    placeholder("添加代码，如 600519 / 00700 / AAPL")
+                    placeholderColor(DesignTokens.Colors.onSurfaceMuted)
+                    color(DesignTokens.Colors.onSurface)
+                    fontSize(DesignTokens.Typography.BODY)
+                    returnKeyTypeDone()
+                }
+                event { textDidChange { params -> onUpdateDraft(params.text) } }
+            }
+        }
+        View {
+            attr {
+                marginLeft(DesignTokens.Spacing.XS)
+                padding(top = DesignTokens.Spacing.SM, bottom = DesignTokens.Spacing.SM, left = DesignTokens.Spacing.MD, right = DesignTokens.Spacing.MD)
+                borderRadius(DesignTokens.Radius.FULL)
+                backgroundColor(DesignTokens.Colors.primarySoft)
+            }
+            event { click { if (!state.isAddingStock) onAdd() } }
+            Text {
+                attr {
+                    text(if (state.isAddingStock) "校验中" else "添加")
+                    fontSize(DesignTokens.Typography.BODY)
+                    fontWeightBold()
+                    color(DesignTokens.Colors.accentTertiary)
+                }
+            }
+        }
+    }
+    state.addStockError?.let { error ->
+        Text {
+            attr {
+                text(error)
+                fontSize(DesignTokens.Typography.CAPTION)
+                color(DesignTokens.Colors.danger)
+                marginTop(DesignTokens.Spacing.XS)
             }
         }
     }
@@ -315,6 +380,12 @@ private fun ViewContainer<*, *>.marketQuoteGallery(
     onSelectStock: (String) -> Unit,
     onToggleFavorite: (String) -> Unit,
     onAskAi: (String) -> Unit,
+    loadedCount: Int,
+    catalogCount: Int,
+    hasMore: Boolean,
+    isLoadingMore: Boolean,
+    loadMoreError: String?,
+    onLoadMore: () -> Unit,
 ) {
     val observableQuotes = ObservableList(quotes.toMutableList())
     List {
@@ -335,6 +406,76 @@ private fun ViewContainer<*, *>.marketQuoteGallery(
                 onToggleFavorite = onToggleFavorite,
                 onAskAi = onAskAi,
             )
+        }
+        marketPaginationFooter(
+            loadedCount = loadedCount,
+            catalogCount = catalogCount,
+            hasMore = hasMore,
+            isLoadingMore = isLoadingMore,
+            error = loadMoreError,
+            onLoadMore = onLoadMore,
+        )
+    }
+}
+
+private fun ViewContainer<*, *>.marketPaginationFooter(
+    loadedCount: Int,
+    catalogCount: Int,
+    hasMore: Boolean,
+    isLoadingMore: Boolean,
+    error: String?,
+    onLoadMore: () -> Unit,
+) {
+    View {
+        attr {
+            alignItemsCenter()
+            padding(DesignTokens.Spacing.MD)
+            margin(bottom = DesignTokens.Spacing.MD)
+        }
+        Text {
+            attr {
+                text("股票目录 · 已加载 $loadedCount / $catalogCount")
+                fontSize(DesignTokens.Typography.CAPTION)
+                color(DesignTokens.Colors.onSurfaceMuted)
+            }
+        }
+        if (error != null) {
+            Text {
+                attr {
+                    text("加载失败：$error")
+                    fontSize(DesignTokens.Typography.CAPTION)
+                    color(DesignTokens.Colors.danger)
+                    marginTop(DesignTokens.Spacing.XS)
+                }
+            }
+        }
+        if (hasMore) {
+            View {
+                attr {
+                    padding(top = DesignTokens.Spacing.XS, bottom = DesignTokens.Spacing.XS, left = DesignTokens.Spacing.LG, right = DesignTokens.Spacing.LG)
+                    borderRadius(DesignTokens.Radius.FULL)
+                    backgroundColor(DesignTokens.Colors.primarySoft)
+                    marginTop(DesignTokens.Spacing.SM)
+                }
+                event { click { if (!isLoadingMore) onLoadMore() } }
+                Text {
+                    attr {
+                        text(if (isLoadingMore) "正在加载…" else "加载更多（每页最多 10 只）")
+                        fontSize(DesignTokens.Typography.BODY)
+                        fontWeightBold()
+                        color(DesignTokens.Colors.accentTertiary)
+                    }
+                }
+            }
+        } else if (loadedCount > 0) {
+            Text {
+                attr {
+                    text("已加载全部行情")
+                    fontSize(DesignTokens.Typography.BODY)
+                    color(DesignTokens.Colors.onSurfaceMuted)
+                    marginTop(DesignTokens.Spacing.SM)
+                }
+            }
         }
     }
 }
@@ -622,7 +763,19 @@ private fun StockQuote.trendLabel(): String = when {
 private fun MarketState.hasDiscoveryFiltersApplied(): Boolean =
     query.isNotBlank() || filter != MarketFilter.ALL || sort != MarketSort.DEFAULT || favoritesOnly
 
+private fun MarketState.marketSourceDescription(): String = when (quotes) {
+    LoadState.Loading -> "正在连接腾讯行情…"
+    is LoadState.Error -> "腾讯行情暂不可用，请刷新重试"
+    LoadState.Empty -> "暂无可展示的行情数据"
+    is LoadState.Content -> if (quoteCatalog.any { it.dataSource == QuoteDataSource.TENCENT }) {
+        "腾讯实时行情"
+    } else {
+        "离线演示数据 · 点击刷新重试实时行情"
+    }
+}
+
 private fun MarketState.emptyDiscoveryDescription(): String {
+    if (hasMore) return "当前已加载目录中没有匹配项，可继续加载下一页。"
     val reasons = buildList {
         if (query.isNotBlank()) add("关键词“$query”")
         if (filter != MarketFilter.ALL) add("${filter.label()}市场")

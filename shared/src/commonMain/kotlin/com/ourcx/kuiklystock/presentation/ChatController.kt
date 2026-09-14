@@ -194,8 +194,25 @@ class ChatController(
             completeWithFailure(assistantMessageId, question, error.readableMessage())
             return
         }
+        val streamedAnswer = StringBuilder()
+        var completed = false
         runCatching {
-            chatRepository.ask(request) { result ->
+            chatRepository.askStreaming(
+                request = request,
+                onDelta = { delta ->
+                    if (completed || delta.isEmpty()) return@askStreaming
+                    streamedAnswer.append(delta)
+                    val generatingAssistant = ChatMessage(
+                        id = assistantMessageId,
+                        role = ChatRole.ASSISTANT,
+                        blocks = buildChatContentBlocks(ParsedStockAiContent(streamedAnswer.toString())),
+                        status = ChatMessageStatus.GENERATING,
+                    )
+                    updateState(state.copy(messages = state.messages.replaceMessage(generatingAssistant)))
+                },
+            ) { result ->
+                if (completed) return@askStreaming
+                completed = true
                 result.fold(
                     onSuccess = { response ->
                         val assistantMessage = ChatMessage(
